@@ -288,7 +288,12 @@ async function handleAuth(event) {
   let result;
   if (state.registerMode) {
     const fullName = $('#full-name').value.trim();
-    result = await state.client.auth.signUp({ email, password, options: { data: { full_name: fullName }, emailRedirectTo: window.location.origin } });
+    // Supabase solo admite URLs http(s) aprobadas. Al abrir index.html con
+    // doble clic, location.origin es "null" y no debe enviarse como redirect.
+    const isWebUrl = ['http:', 'https:'].includes(window.location.protocol);
+    const options = { data: { full_name: fullName } };
+    if (isWebUrl) options.emailRedirectTo = window.location.origin;
+    result = await state.client.auth.signUp({ email, password, options });
     if (!result.error && !result.data.session) authError('Revisá tu correo para confirmar la cuenta antes de ingresar.');
   } else result = await state.client.auth.signInWithPassword({ email, password });
   if (result.error) authError(messageFrom(result.error));
