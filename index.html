@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Calculadora compartida de costos para Jusa Boutique" />
+    <title>Jusa Boutique · Calculadora</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section id="setup-warning" class="notice hidden">
+        Configurá <code>config.js</code> con la URL y la clave anon de Supabase antes de abrir la aplicación.
+      </section>
+
+      <section id="auth-view" class="auth-card hidden" aria-labelledby="auth-title">
+        <img src="https://i.postimg.cc/SKmqPJcd/Logo.png" alt="Jusa Boutique" class="logo" />
+        <h1 id="auth-title">Calculadora compartida</h1>
+        <p id="auth-subtitle">Ingresá con tu cuenta del equipo.</p>
+        <form id="auth-form" novalidate>
+          <label for="full-name" class="register-only hidden">Nombre</label>
+          <input id="full-name" class="register-only hidden" type="text" autocomplete="name" placeholder="Tu nombre" maxlength="80" />
+          <label for="email">Correo electrónico</label>
+          <input id="email" type="email" autocomplete="email" placeholder="nombre@correo.com" required />
+          <label for="password">Contraseña</label>
+          <input id="password" type="password" autocomplete="current-password" placeholder="Mínimo 8 caracteres" minlength="8" required />
+          <p id="auth-error" class="form-error hidden" role="alert"></p>
+          <button id="auth-submit" class="button" type="submit">Ingresar</button>
+        </form>
+        <button id="auth-toggle" class="link-button" type="button">Crear mi cuenta</button>
+      </section>
+
+      <section id="onboarding-view" class="auth-card hidden" aria-labelledby="onboarding-title">
+        <img src="https://i.postimg.cc/SKmqPJcd/Logo.png" alt="Jusa Boutique" class="logo" />
+        <h1 id="onboarding-title">Preparar la boutique</h1>
+        <p>Tu cuenta todavía no pertenece a un equipo. Si sos la encargada, creá el espacio compartido.</p>
+        <form id="business-form">
+          <label for="business-name">Nombre de la boutique</label>
+          <input id="business-name" value="Jusa Boutique" required maxlength="100" />
+          <p id="business-error" class="form-error hidden" role="alert"></p>
+          <button class="button" type="submit">Crear boutique compartida</button>
+        </form>
+        <button id="onboarding-logout" class="link-button" type="button">Cerrar sesión</button>
+      </section>
+
+      <section id="app-view" class="app hidden">
+        <header class="app-header">
+          <div class="brand">
+            <img src="https://i.postimg.cc/SKmqPJcd/Logo.png" alt="Jusa Boutique" class="brand-logo" />
+            <div>
+              <p class="eyebrow" id="business-label">Jusa Boutique</p>
+              <h1>Calculadora</h1>
+            </div>
+          </div>
+          <div class="user-menu">
+            <span id="user-label"></span>
+            <span id="role-label" class="role"></span>
+            <button id="logout-button" class="small-button" type="button">Salir</button>
+          </div>
+        </header>
+
+        <p id="app-status" class="status" aria-live="polite"></p>
+
+        <div class="grid">
+          <section class="card">
+            <h2>Gastos de logística</h2>
+            <div class="field-grid">
+              <label>Cotización real (1 BRL a PYG)<input id="cotizacion" type="number" min="0" step="0.01" /></label>
+              <label>Pasajes totales (PYG)<input id="pasajes" type="number" min="0" step="1" /></label>
+              <label>Viáticos / comida (PYG)<input id="viaticos" type="number" min="0" step="1" /></label>
+              <label>Fletes / envíos (PYG)<input id="flete" type="number" min="0" step="1" /></label>
+            </div>
+          </section>
+
+          <section class="card">
+            <h2>Configuración y resumen</h2>
+            <div class="field-grid compact">
+              <label>Cálculo de ganancia
+                <select id="profit-mode"><option value="markup">Markup sobre costo</option><option value="margin">Margen comercial sobre venta</option></select>
+              </label>
+              <label>Distribución de gastos
+                <select id="allocation-method"><option value="value">Proporcional al valor</option><option value="quantity">Por cantidad de prendas</option></select>
+              </label>
+            </div>
+            <div class="summary">
+              <p>Total gastos <strong id="total-expenses">0 PYG</strong></p>
+              <p>Total prendas <strong id="total-units">0 un.</strong></p>
+              <p>Compra de prendas <strong id="total-purchase">0 PYG</strong></p>
+              <p class="profit">Ganancia estimada <strong id="total-profit">0 PYG</strong></p>
+            </div>
+          </section>
+        </div>
+
+        <section class="card inventory-card">
+          <div class="section-heading">
+            <div><h2>Inventario compartido</h2><p>Los cambios se guardan para todo el equipo.</p></div>
+            <button id="add-garment" class="button fit" type="button">+ Agregar prenda</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Prenda</th><th>Cant.</th><th>Costo (BRL)</th><th>Compra (PYG)</th><th>+ Viaje</th><th>Costo real</th><th>Ganancia %</th><th>Precio venta</th><th></th></tr></thead>
+              <tbody id="garment-rows"></tbody>
+            </table>
+          </div>
+          <div class="actions">
+            <button id="export-button" class="small-button dark" type="button">Descargar CSV</button>
+            <button id="print-button" class="small-button" type="button">Imprimir / guardar PDF</button>
+          </div>
+        </section>
+
+        <section id="team-card" class="card hidden">
+          <h2>Equipo</h2>
+          <p class="help">Invitá a una persona por correo. Cuando cree su cuenta con ese mismo correo, se unirá automáticamente al inventario compartido.</p>
+          <form id="invite-form" class="invite-form">
+            <label for="invite-email">Correo de la persona</label>
+            <input id="invite-email" type="email" placeholder="compañera@correo.com" required />
+            <label for="invite-role">Rol</label>
+            <select id="invite-role"><option value="vendedora">Vendedora</option><option value="admin">Administradora</option></select>
+            <button class="button fit" type="submit">Preparar invitación</button>
+          </form>
+          <p id="invite-status" class="status" aria-live="polite"></p>
+          <ul id="invite-list" class="invite-list"></ul>
+        </section>
+      </section>
+    </main>
+    <script src="config.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
