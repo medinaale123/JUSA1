@@ -3,7 +3,9 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 const config = window.JUSA_CONFIG || {};
 const ready = config.supabaseUrl && config.supabaseAnonKey && !config.supabaseUrl.includes('PEGAR_AQUI');
 const $ = (selector) => document.querySelector(selector);
-const state = { client: null, user: null, membership: null, business: null, settings: null, garments: [], registerMode: false, settingsTimer: null, garmentTimers: new Map() };
+const inviteHash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+const inviteQuery = new URLSearchParams(window.location.search);
+const state = { client: null, user: null, membership: null, business: null, settings: null, garments: [], registerMode: false, inviteFlow: inviteHash.get('type') === 'invite' || inviteQuery.get('type') === 'invite', settingsTimer: null, garmentTimers: new Map() };
 
 const formatPYG = (value) => `${Math.round(Number(value) || 0).toLocaleString('es-PY')} PYG`;
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -23,7 +25,7 @@ function authError(text = '') {
 }
 
 function showOnly(view) {
-  ['#auth-view', '#onboarding-view', '#app-view'].forEach(hide);
+  ['#auth-view', '#onboarding-view', '#invite-accept-view', '#app-view'].forEach(hide);
   show(view);
 }
 
@@ -253,10 +255,12 @@ async function createInvitation(event) {
   const email = $('#invite-email').value.trim().toLowerCase();
   const role = $('#invite-role').value;
   const status = $('#invite-status'); status.className = 'status'; status.textContent = '';
-  const { error } = await state.client.from('invitations').insert({ business_id: state.membership.business_id, email, role, created_by: state.user.id });
+  const { data, error } = await state.client.rpc('invite_member', { target_business_id: state.membership.business_id, target_email: email, target_role: role });
   if (error) { status.textContent = messageFrom(error); status.classList.add('error'); return; }
   $('#invite-form').reset();
-  status.textContent = `Invitación preparada para ${email}. Avisale que cree su cuenta con ese correo.`;
+  status.textContent = data === 'joined'
+    ? `${email} ya tenía una cuenta y ahora tiene acceso al inventario.`
+    : `Invitación preparada para ${email}. Avisale que cree su cuenta con ese correo.`;
   status.classList.add('success');
   await loadInvitations();
 }
@@ -299,12 +303,29 @@ async function handleAuth(event) {
   if (result.error) authError(messageFrom(result.error));
 }
 
+async function completeInvitation(event) {
+  event.preventDefault();
+  const password = $('#invite-password').value;
+  const confirmation = $('#invite-password-confirm').value;
+  const errorEl = $('#invite-accept-error');
+  errorEl.classList.add('hidden');
+  if (password.length < 8) { errorEl.textContent = 'La contraseña debe tener al menos 8 caracteres.'; errorEl.classList.remove('hidden'); return; }
+  if (password !== confirmation) { errorEl.textContent = 'Las contraseñas no coinciden.'; errorEl.classList.remove('hidden'); return; }
+  const { error } = await state.client.auth.updateUser({ password });
+  if (error) { errorEl.textContent = messageFrom(error); errorEl.classList.remove('hidden'); return; }
+  state.inviteFlow = false;
+  history.replaceState({}, document.title, window.location.pathname);
+  await refreshWorkspace();
+}
+
 async function initialize() {
   if (!ready) { show('#setup-warning'); return; }
   state.client = createClient(config.supabaseUrl, config.supabaseAnonKey);
   $('#auth-form').addEventListener('submit', handleAuth);
   $('#auth-toggle').addEventListener('click', () => setAuthMode(!state.registerMode));
   $('#business-form').addEventListener('submit', createBusiness);
+  $('#invite-accept-form').addEventListener('submit', completeInvitation);
+  $('#onboarding-password').addEventListener('click', () => showOnly('#invite-accept-view'));
   $('#onboarding-logout').addEventListener('click', () => state.client.auth.signOut());
   $('#logout-button').addEventListener('click', () => state.client.auth.signOut());
   $('#add-garment').addEventListener('click', addGarment);
@@ -318,11 +339,15 @@ async function initialize() {
   $('#profit-mode').addEventListener('change', updateProfitInputLimits);
   state.client.auth.onAuthStateChange((_event, session) => {
     state.user = session?.user || null;
-    if (state.user) refreshWorkspace(); else showOnly('#auth-view');
+    if (state.user && state.inviteFlow) showOnly('#invite-accept-view');
+    else if (state.user) refreshWorkspace();
+    else showOnly('#auth-view');
   });
   const { data: { session } } = await state.client.auth.getSession();
   state.user = session?.user || null;
-  if (state.user) await refreshWorkspace(); else { showOnly('#auth-view'); setAuthMode(false); }
+  if (state.user && state.inviteFlow) showOnly('#invite-accept-view');
+  else if (state.user) await refreshWorkspace();
+  else { showOnly('#auth-view'); setAuthMode(false); }
 }
 
 initialize();

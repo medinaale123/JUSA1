@@ -43,7 +43,23 @@
           <p id="business-error" class="form-error hidden" role="alert"></p>
           <button class="button" type="submit">Crear boutique compartida</button>
         </form>
+        <p class="help">¿Llegaste desde una invitación? Primero definí tu contraseña y pedile a una administradora que agregue tu correo desde Equipo.</p>
+        <button id="onboarding-password" class="link-button" type="button">Definir mi contraseña</button>
         <button id="onboarding-logout" class="link-button" type="button">Cerrar sesión</button>
+      </section>
+
+      <section id="invite-accept-view" class="auth-card hidden" aria-labelledby="invite-accept-title">
+        <img src="https://i.postimg.cc/SKmqPJcd/Logo.png" alt="Jusa Boutique" class="logo" />
+        <h1 id="invite-accept-title">Terminá tu invitación</h1>
+        <p>Elegí una contraseña para acceder a Jusa Boutique.</p>
+        <form id="invite-accept-form" novalidate>
+          <label for="invite-password">Nueva contraseña</label>
+          <input id="invite-password" type="password" autocomplete="new-password" minlength="8" placeholder="Mínimo 8 caracteres" required />
+          <label for="invite-password-confirm">Repetí la contraseña</label>
+          <input id="invite-password-confirm" type="password" autocomplete="new-password" minlength="8" placeholder="Repetí la contraseña" required />
+          <p id="invite-accept-error" class="form-error hidden" role="alert"></p>
+          <button class="button" type="submit">Guardar contraseña y entrar</button>
+        </form>
       </section>
 
       <section id="app-view" class="app hidden">
