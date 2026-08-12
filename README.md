@@ -6,10 +6,11 @@ Aplicación estática para que el equipo comparta prendas, gastos y cálculos en
 
 1. Creá un proyecto en [Supabase](https://supabase.com/dashboard).
 2. En **SQL Editor**, creá una consulta nueva, pegá el contenido completo de `supabase-schema.sql` y ejecutalo una vez.
-3. En **Authentication > Providers**, comprobá que **Email** esté habilitado. Es recomendable activar la confirmación de correo.
+3. En **Authentication > Providers**, comprobá que **Email** esté habilitado y dejá activada la **confirmación de correo**. Es necesaria: las invitaciones se aceptan únicamente con el correo verificado.
 4. En **Project Settings > API**, copiá la **Project URL** y la clave **anon / publishable**. Pegalas en `config.js`. Nunca uses una clave `service_role` o `sb_secret` en ese archivo.
-5. Publicá esta carpeta en un repositorio privado de GitHub. Después, en [Vercel](https://vercel.com), elegí **New Project**, importá el repositorio y presioná **Deploy**. Es un sitio estático: no necesita comando de compilación.
-6. En Supabase, agregá la URL final de Vercel en **Authentication > URL Configuration > Site URL** y también en **Redirect URLs** (por ejemplo, `https://jusa-boutique.vercel.app`). Esto permite que el enlace de confirmación vuelva a la app. No uses rutas `file:///...`: Supabase no puede redirigir a un archivo local.
+5. Si ya habías ejecutado `supabase-schema.sql` en una versión anterior, pegá y ejecutá también `supabase-security-update.sql` (una vez; se puede repetir sin problemas).
+6. Publicá esta carpeta en un repositorio privado de GitHub. Después, en [Vercel](https://vercel.com), elegí **New Project**, importá el repositorio y presioná **Deploy**. Es un sitio estático: no necesita comando de compilación.
+7. En Supabase, agregá la URL final de Vercel en **Authentication > URL Configuration > Site URL** y también en **Redirect URLs** (por ejemplo, `https://jusa-boutique.vercel.app`). Esto permite que el enlace de confirmación vuelva a la app. No uses rutas `file:///...`: Supabase no puede redirigir a un archivo local.
 
 ## Primer acceso y equipo
 
@@ -25,6 +26,9 @@ Las invitaciones actuales no envían un correo automático: solo habilitan el ac
 ## Seguridad incluida
 
 - Contraseñas gestionadas por Supabase Auth, nunca guardadas en el HTML.
+- Las invitaciones se aceptan solo cuando el correo quedó verificado: registrarse con el correo de otra persona no da acceso.
+- Permisos por columna: nadie puede mover una prenda o la configuración a otra boutique desde el navegador.
+- Cabeceras de seguridad (CSP, HSTS, anti-clickjacking) en `vercel.json`.
 - Row Level Security: solo integrantes de la boutique pueden consultar o modificar sus gastos y prendas.
 - Roles de administradora y vendedora.
 - Validaciones en la base de datos para cantidades y montos.
@@ -34,4 +38,6 @@ Las invitaciones actuales no envían un correo automático: solo habilitan el ac
 
 - `index.html`, `styles.css`, `app.js`: interfaz y lógica de la calculadora.
 - `supabase-schema.sql`: tablas, permisos, roles y automatizaciones de Supabase.
+- `supabase-security-update.sql`: actualización de seguridad para instalaciones anteriores.
+- `vercel.json`: cabeceras de seguridad del sitio estático.
 - `config.js`: configuración local de la URL y clave pública del proyecto.
