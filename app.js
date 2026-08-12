@@ -7,21 +7,37 @@ const inviteHash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
 const inviteQuery = new URLSearchParams(window.location.search);
 const state = { client: null, user: null, membership: null, business: null, settings: null, garments: [], registerMode: false, inviteFlow: inviteHash.get('type') === 'invite' || inviteQuery.get('type') === 'invite', settingsTimer: null, garmentTimers: new Map() };
 
+const GENERIC_ERROR = 'Ocurrió un error. Intentá nuevamente.';
+const NETWORK_ERROR = 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.';
+
 const formatPYG = (value) => `${Math.round(Number(value) || 0).toLocaleString('es-PY')} PYG`;
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
-const setStatus = (text = '', kind = '') => { const el = $('#app-status'); el.textContent = text; el.className = `status ${kind}`; };
+const setStatus = (text = '', kind = '') => { const el = $('#app-status'); if (!el) return; el.textContent = text; el.className = `status ${kind}`; };
 const show = (selector) => $(selector).classList.remove('hidden');
 const hide = (selector) => $(selector).classList.add('hidden');
 
-function messageFrom(error, fallback = 'Ocurrió un error. Intentá nuevamente.') {
+function messageFrom(error, fallback = GENERIC_ERROR) {
   console.error(error);
+  if (error instanceof TypeError || /fetch/i.test(error?.message || '')) return NETWORK_ERROR;
   return error?.message || fallback;
 }
 
-function authError(text = '') {
-  const el = $('#auth-error');
+function formError(selector, text = '') {
+  const el = $(selector);
+  if (!el) return;
   el.textContent = text;
   el.classList.toggle('hidden', !text);
+}
+
+function authError(text = '') {
+  formError('#auth-error', text);
+}
+
+function fatalError(text) {
+  const el = $('#fatal-error');
+  if (!el) return;
+  el.textContent = text;
+  el.classList.remove('hidden');
 }
 
 function showOnly(view) {
@@ -43,43 +59,45 @@ function setAuthMode(registerMode) {
 async function refreshWorkspace() {
   if (!state.user) return;
   setStatus('Cargando inventario compartido…');
-  const { data: membership, error: membershipError } = await state.client
-    .from('memberships')
-    .select('business_id, role, businesses(name)')
-    .eq('user_id', state.user.id)
-    .limit(1)
-    .maybeSingle();
+  try {
+    const { data: membership, error: membershipError } = await state.client
+      .from('memberships')
+      .select('business_id, role, businesses(name)')
+      .eq('user_id', state.user.id)
+      .limit(1)
+      .maybeSingle();
 
-  if (membershipError) {
-    setStatus(messageFrom(membershipError), 'error');
-    return;
-  }
-  if (!membership) {
-    showOnly('#onboarding-view');
-    return;
-  }
+    if (membershipError) throw membershipError;
+    if (!membership) {
+      showOnly('#onboarding-view');
+      setStatus();
+      return;
+    }
 
-  state.membership = membership;
-  state.business = Array.isArray(membership.businesses) ? membership.businesses[0] : membership.businesses;
-  const [settingsResult, garmentsResult] = await Promise.all([
-    state.client.from('business_settings').select('*').eq('business_id', membership.business_id).single(),
-    state.client.from('garments').select('*').eq('business_id', membership.business_id).order('created_at')
-  ]);
-  if (settingsResult.error || garmentsResult.error) {
-    setStatus(messageFrom(settingsResult.error || garmentsResult.error), 'error');
-    return;
+    const [settingsResult, garmentsResult] = await Promise.all([
+      state.client.from('business_settings').select('*').eq('business_id', membership.business_id).single(),
+      state.client.from('garments').select('*').eq('business_id', membership.business_id).order('created_at')
+    ]);
+    if (settingsResult.error) throw settingsResult.error;
+    if (garmentsResult.error) throw garmentsResult.error;
+    if (!settingsResult.data) throw new Error('No encontramos la configuración de la boutique.');
+
+    state.membership = membership;
+    state.business = Array.isArray(membership.businesses) ? membership.businesses[0] : membership.businesses;
+    state.settings = settingsResult.data;
+    state.garments = garmentsResult.data || [];
+    showOnly('#app-view');
+    $('#business-label').textContent = state.business?.name || 'Jusa Boutique';
+    $('#user-label').textContent = state.user.email;
+    $('#role-label').textContent = membership.role === 'admin' ? 'Administradora' : 'Vendedora';
+    $('#team-card').classList.toggle('hidden', membership.role !== 'admin');
+    renderSettings();
+    renderGarments();
+    if (membership.role === 'admin') await loadInvitations();
+    setStatus('Todo está sincronizado.', 'success');
+  } catch (error) {
+    setStatus(messageFrom(error, 'No pudimos cargar el inventario compartido.'), 'error');
   }
-  state.settings = settingsResult.data;
-  state.garments = garmentsResult.data;
-  showOnly('#app-view');
-  $('#business-label').textContent = state.business?.name || 'Jusa Boutique';
-  $('#user-label').textContent = state.user.email;
-  $('#role-label').textContent = membership.role === 'admin' ? 'Administradora' : 'Vendedora';
-  $('#team-card').classList.toggle('hidden', membership.role !== 'admin');
-  renderSettings();
-  renderGarments();
-  if (membership.role === 'admin') await loadInvitations();
-  setStatus('Todo está sincronizado.', 'success');
 }
 
 function renderSettings() {
@@ -182,20 +200,25 @@ function currentSettings() {
 function queueSettingsSave() {
   calculate();
   clearTimeout(state.settingsTimer);
-  state.settingsTimer = setTimeout(saveSettings, 550);
+  state.settingsTimer = setTimeout(() => { void saveSettings(); }, 550);
 }
 
 async function saveSettings() {
   const values = currentSettings();
-  const { error } = await state.client.from('business_settings').update(values).eq('business_id', state.membership.business_id);
-  if (error) setStatus(messageFrom(error), 'error');
-  else { state.settings = { ...state.settings, ...values }; setStatus('Cambios guardados.', 'success'); }
+  try {
+    const { error } = await state.client.from('business_settings').update(values).eq('business_id', state.membership.business_id);
+    if (error) throw error;
+    state.settings = { ...state.settings, ...values };
+    setStatus('Cambios guardados.', 'success');
+  } catch (error) {
+    setStatus(messageFrom(error, 'No pudimos guardar los cambios.'), 'error');
+  }
 }
 
 function queueGarmentSave(id) {
   calculate();
   clearTimeout(state.garmentTimers.get(id));
-  state.garmentTimers.set(id, setTimeout(() => saveGarment(id), 550));
+  state.garmentTimers.set(id, setTimeout(() => { void saveGarment(id); }, 550));
 }
 
 async function saveGarment(id) {
@@ -207,61 +230,94 @@ async function saveGarment(id) {
   if (payload.quantity <= 0 || payload.price_brl < 0 || payload.profit_percentage < 0 || ($('#profit-mode').value === 'margin' && payload.profit_percentage >= 100)) {
     setStatus('Revisá cantidad, costos y porcentaje de ganancia.', 'error'); return;
   }
-  const { data, error } = await state.client.from('garments').update(payload).eq('id', id).select().single();
-  if (error) { setStatus(messageFrom(error), 'error'); return; }
-  state.garments = state.garments.map((item) => item.id === id ? data : item);
-  setStatus('Prenda actualizada.', 'success');
+  try {
+    const { data, error } = await state.client.from('garments').update(payload).eq('id', id).select().single();
+    if (error) throw error;
+    state.garments = state.garments.map((item) => item.id === id ? data : item);
+    setStatus('Prenda actualizada.', 'success');
+  } catch (error) {
+    setStatus(messageFrom(error, 'No pudimos guardar la prenda.'), 'error');
+  }
 }
 
 async function addGarment() {
-  const { data, error } = await state.client.from('garments').insert({
-    business_id: state.membership.business_id, name: 'Nueva prenda', quantity: 1, price_brl: 0, profit_percentage: 100, updated_by: state.user.id
-  }).select().single();
-  if (error) { setStatus(messageFrom(error), 'error'); return; }
-  state.garments.push(data);
-  renderGarments();
-  document.querySelector(`#garment-rows tr[data-id="${data.id}"] [data-field="name"]`)?.focus();
-  setStatus('Prenda agregada.', 'success');
+  try {
+    const { data, error } = await state.client.from('garments').insert({
+      business_id: state.membership.business_id, name: 'Nueva prenda', quantity: 1, price_brl: 0, profit_percentage: 100, updated_by: state.user.id
+    }).select().single();
+    if (error) throw error;
+    state.garments.push(data);
+    renderGarments();
+    document.querySelector(`#garment-rows tr[data-id="${data.id}"] [data-field="name"]`)?.focus();
+    setStatus('Prenda agregada.', 'success');
+  } catch (error) {
+    setStatus(messageFrom(error, 'No pudimos agregar la prenda.'), 'error');
+  }
 }
 
 async function deleteGarment(id) {
   if (!window.confirm('¿Eliminar esta prenda del inventario compartido?')) return;
-  const { error } = await state.client.from('garments').delete().eq('id', id);
-  if (error) { setStatus(messageFrom(error), 'error'); return; }
-  state.garments = state.garments.filter((item) => item.id !== id);
-  renderGarments();
-  setStatus('Prenda eliminada.', 'success');
+  try {
+    const { error } = await state.client.from('garments').delete().eq('id', id);
+    if (error) throw error;
+    state.garments = state.garments.filter((item) => item.id !== id);
+    renderGarments();
+    setStatus('Prenda eliminada.', 'success');
+  } catch (error) {
+    setStatus(messageFrom(error, 'No pudimos eliminar la prenda.'), 'error');
+  }
 }
 
 async function createBusiness(event) {
   event.preventDefault();
   const name = $('#business-name').value.trim();
-  const errorEl = $('#business-error');
-  errorEl.classList.add('hidden');
-  const { error } = await state.client.rpc('create_business', { business_name: name });
-  if (error) { errorEl.textContent = messageFrom(error); errorEl.classList.remove('hidden'); return; }
+  formError('#business-error');
+  try {
+    const { error } = await state.client.rpc('create_business', { business_name: name });
+    if (error) throw error;
+  } catch (error) {
+    formError('#business-error', messageFrom(error, 'No pudimos crear la boutique.'));
+    return;
+  }
   await refreshWorkspace();
 }
 
+function setInviteStatus(text = '', kind = '') {
+  const status = $('#invite-status');
+  if (!status) return;
+  status.textContent = text;
+  status.className = `status ${kind}`;
+}
+
 async function loadInvitations() {
-  const { data, error } = await state.client.from('invitations').select('id, email, role, created_at').eq('business_id', state.membership.business_id).order('created_at');
-  if (error) { $('#invite-status').textContent = messageFrom(error); return; }
-  const list = $('#invite-list'); list.replaceChildren();
-  data.forEach((invite) => { const item = document.createElement('li'); item.textContent = `${invite.email} · ${invite.role === 'admin' ? 'Administradora' : 'Vendedora'} (pendiente)`; list.append(item); });
+  try {
+    const { data, error } = await state.client.from('invitations').select('id, email, role, created_at').eq('business_id', state.membership.business_id).order('created_at');
+    if (error) throw error;
+    const list = $('#invite-list'); list.replaceChildren();
+    (data || []).forEach((invite) => { const item = document.createElement('li'); item.textContent = `${invite.email} · ${invite.role === 'admin' ? 'Administradora' : 'Vendedora'} (pendiente)`; list.append(item); });
+  } catch (error) {
+    setInviteStatus(messageFrom(error, 'No pudimos cargar las invitaciones.'), 'error');
+  }
 }
 
 async function createInvitation(event) {
   event.preventDefault();
   const email = $('#invite-email').value.trim().toLowerCase();
   const role = $('#invite-role').value;
-  const status = $('#invite-status'); status.className = 'status'; status.textContent = '';
-  const { data, error } = await state.client.rpc('invite_member', { target_business_id: state.membership.business_id, target_email: email, target_role: role });
-  if (error) { status.textContent = messageFrom(error); status.classList.add('error'); return; }
+  setInviteStatus();
+  let outcome;
+  try {
+    const { data, error } = await state.client.rpc('invite_member', { target_business_id: state.membership.business_id, target_email: email, target_role: role });
+    if (error) throw error;
+    outcome = data;
+  } catch (error) {
+    setInviteStatus(messageFrom(error, 'No pudimos preparar la invitación.'), 'error');
+    return;
+  }
   $('#invite-form').reset();
-  status.textContent = data === 'joined'
+  setInviteStatus(outcome === 'joined'
     ? `${email} ya tenía una cuenta y ahora tiene acceso al inventario.`
-    : `Invitación preparada para ${email}. Avisale que cree su cuenta con ese correo.`;
-  status.classList.add('success');
+    : `Invitación preparada para ${email}. Avisale que cree su cuenta con ese correo.`, 'success');
   await loadInvitations();
 }
 
@@ -282,37 +338,61 @@ function exportCsv() {
     escape(row.querySelector('[data-field="name"]').value), row.querySelector('[data-field="quantity"]').value, row.querySelector('[data-field="price_brl"]').value,
     row.querySelector('[data-output="purchase"]').textContent.replace(/\D/g, ''), row.querySelector('[data-output="travel"]').textContent.replace(/\D/g, ''), row.querySelector('[data-output="real"]').textContent.replace(/\D/g, ''), row.querySelector('[data-field="profit_percentage"]').value, row.querySelector('[data-output="sale"]').textContent.replace(/\D/g, '')
   ].join(';')));
-  const url = URL.createObjectURL(new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' }));
-  const link = document.createElement('a'); link.href = url; link.download = `JusaBoutique_${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(url);
+  let url;
+  try {
+    url = URL.createObjectURL(new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = `JusaBoutique_${new Date().toISOString().slice(0, 10)}.csv`; link.click();
+  } catch (error) {
+    setStatus(messageFrom(error, 'No pudimos generar el archivo CSV.'), 'error');
+  } finally {
+    if (url) URL.revokeObjectURL(url);
+  }
 }
 
 async function handleAuth(event) {
   event.preventDefault(); authError();
   const email = $('#email').value.trim(); const password = $('#password').value;
-  let result;
-  if (state.registerMode) {
-    const fullName = $('#full-name').value.trim();
-    // Supabase solo admite URLs http(s) aprobadas. Al abrir index.html con
-    // doble clic, location.origin es "null" y no debe enviarse como redirect.
-    const isWebUrl = ['http:', 'https:'].includes(window.location.protocol);
-    const options = { data: { full_name: fullName } };
-    if (isWebUrl) options.emailRedirectTo = window.location.origin;
-    result = await state.client.auth.signUp({ email, password, options });
-    if (!result.error && !result.data.session) authError('Revisá tu correo para confirmar la cuenta antes de ingresar.');
-  } else result = await state.client.auth.signInWithPassword({ email, password });
-  if (result.error) authError(messageFrom(result.error));
+  try {
+    let result;
+    if (state.registerMode) {
+      const fullName = $('#full-name').value.trim();
+      // Supabase solo admite URLs http(s) aprobadas. Al abrir index.html con
+      // doble clic, location.origin es "null" y no debe enviarse como redirect.
+      const isWebUrl = ['http:', 'https:'].includes(window.location.protocol);
+      const options = { data: { full_name: fullName } };
+      if (isWebUrl) options.emailRedirectTo = window.location.origin;
+      result = await state.client.auth.signUp({ email, password, options });
+      if (!result.error && !result.data.session) authError('Revisá tu correo para confirmar la cuenta antes de ingresar.');
+    } else result = await state.client.auth.signInWithPassword({ email, password });
+    if (result.error) authError(messageFrom(result.error));
+  } catch (error) {
+    authError(messageFrom(error, 'No pudimos completar el acceso.'));
+  }
+}
+
+async function signOut() {
+  try {
+    const { error } = await state.client.auth.signOut();
+    if (error) throw error;
+  } catch (error) {
+    setStatus(messageFrom(error, 'No pudimos cerrar la sesión.'), 'error');
+  }
 }
 
 async function completeInvitation(event) {
   event.preventDefault();
   const password = $('#invite-password').value;
   const confirmation = $('#invite-password-confirm').value;
-  const errorEl = $('#invite-accept-error');
-  errorEl.classList.add('hidden');
-  if (password.length < 8) { errorEl.textContent = 'La contraseña debe tener al menos 8 caracteres.'; errorEl.classList.remove('hidden'); return; }
-  if (password !== confirmation) { errorEl.textContent = 'Las contraseñas no coinciden.'; errorEl.classList.remove('hidden'); return; }
-  const { error } = await state.client.auth.updateUser({ password });
-  if (error) { errorEl.textContent = messageFrom(error); errorEl.classList.remove('hidden'); return; }
+  formError('#invite-accept-error');
+  if (password.length < 8) { formError('#invite-accept-error', 'La contraseña debe tener al menos 8 caracteres.'); return; }
+  if (password !== confirmation) { formError('#invite-accept-error', 'Las contraseñas no coinciden.'); return; }
+  try {
+    const { error } = await state.client.auth.updateUser({ password });
+    if (error) throw error;
+  } catch (error) {
+    formError('#invite-accept-error', messageFrom(error, 'No pudimos guardar la contraseña.'));
+    return;
+  }
   state.inviteFlow = false;
   history.replaceState({}, document.title, window.location.pathname);
   await refreshWorkspace();
@@ -321,17 +401,17 @@ async function completeInvitation(event) {
 async function initialize() {
   if (!ready) { show('#setup-warning'); return; }
   state.client = createClient(config.supabaseUrl, config.supabaseAnonKey);
-  $('#auth-form').addEventListener('submit', handleAuth);
+  $('#auth-form').addEventListener('submit', (event) => { void handleAuth(event); });
   $('#auth-toggle').addEventListener('click', () => setAuthMode(!state.registerMode));
-  $('#business-form').addEventListener('submit', createBusiness);
-  $('#invite-accept-form').addEventListener('submit', completeInvitation);
+  $('#business-form').addEventListener('submit', (event) => { void createBusiness(event); });
+  $('#invite-accept-form').addEventListener('submit', (event) => { void completeInvitation(event); });
   $('#onboarding-password').addEventListener('click', () => showOnly('#invite-accept-view'));
-  $('#onboarding-logout').addEventListener('click', () => state.client.auth.signOut());
-  $('#logout-button').addEventListener('click', () => state.client.auth.signOut());
-  $('#add-garment').addEventListener('click', addGarment);
+  $('#onboarding-logout').addEventListener('click', () => { void signOut(); });
+  $('#logout-button').addEventListener('click', () => { void signOut(); });
+  $('#add-garment').addEventListener('click', () => { void addGarment(); });
   $('#export-button').addEventListener('click', exportCsv);
   $('#print-button').addEventListener('click', () => window.print());
-  $('#invite-form').addEventListener('submit', createInvitation);
+  $('#invite-form').addEventListener('submit', (event) => { void createInvitation(event); });
   ['#cotizacion', '#pasajes', '#viaticos', '#flete', '#profit-mode', '#allocation-method'].forEach((selector) => {
     $(selector).addEventListener('input', queueSettingsSave);
     $(selector).addEventListener('change', queueSettingsSave);
@@ -340,14 +420,22 @@ async function initialize() {
   state.client.auth.onAuthStateChange((_event, session) => {
     state.user = session?.user || null;
     if (state.user && state.inviteFlow) showOnly('#invite-accept-view');
-    else if (state.user) refreshWorkspace();
+    else if (state.user) void refreshWorkspace();
     else showOnly('#auth-view');
   });
-  const { data: { session } } = await state.client.auth.getSession();
+  const { data, error: sessionError } = await state.client.auth.getSession();
+  if (sessionError) throw sessionError;
+  const session = data?.session;
   state.user = session?.user || null;
   if (state.user && state.inviteFlow) showOnly('#invite-accept-view');
   else if (state.user) await refreshWorkspace();
   else { showOnly('#auth-view'); setAuthMode(false); }
 }
 
-initialize();
+window.addEventListener('unhandledrejection', (event) => {
+  setStatus(messageFrom(event.reason, GENERIC_ERROR), 'error');
+});
+
+initialize().catch((error) => {
+  fatalError(messageFrom(error, 'No pudimos iniciar la aplicación. Recargá la página e intentá de nuevo.'));
+});
