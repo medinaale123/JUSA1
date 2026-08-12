@@ -1,28 +1,20 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+import {
+  $, $$, cellWith, createElement, csvCell, downloadFile, fieldNumber, fieldValue, formatPYG, formatUnits,
+  hide, messageFrom, number, outputDigits, positive, roleLabel, setError, setOutput, setStatusText, show, toggleHidden
+} from './utils.js';
 
 const config = window.JUSA_CONFIG || {};
 const ready = config.supabaseUrl && config.supabaseAnonKey && !config.supabaseUrl.includes('PEGAR_AQUI');
-const $ = (selector) => document.querySelector(selector);
 const inviteHash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
 const inviteQuery = new URLSearchParams(window.location.search);
 const state = { client: null, user: null, membership: null, business: null, settings: null, garments: [], registerMode: false, inviteFlow: inviteHash.get('type') === 'invite' || inviteQuery.get('type') === 'invite', settingsTimer: null, garmentTimers: new Map() };
 
-const formatPYG = (value) => `${Math.round(Number(value) || 0).toLocaleString('es-PY')} PYG`;
-const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
-const setStatus = (text = '', kind = '') => { const el = $('#app-status'); el.textContent = text; el.className = `status ${kind}`; };
-const show = (selector) => $(selector).classList.remove('hidden');
-const hide = (selector) => $(selector).classList.add('hidden');
-
-function messageFrom(error, fallback = 'Ocurrió un error. Intentá nuevamente.') {
-  console.error(error);
-  return error?.message || fallback;
-}
-
-function authError(text = '') {
-  const el = $('#auth-error');
-  el.textContent = text;
-  el.classList.toggle('hidden', !text);
-}
+const setStatus = (text = '', kind = '') => setStatusText('#app-status', text, kind);
+const reportError = (error) => setStatus(messageFrom(error), 'error');
+const garmentRows = () => $$('#garment-rows tr');
+const settingField = (selector) => positive($(selector).value);
+const authError = (text = '') => setError('#auth-error', text);
 
 function showOnly(view) {
   ['#auth-view', '#onboarding-view', '#invite-accept-view', '#app-view'].forEach(hide);
@@ -31,7 +23,7 @@ function showOnly(view) {
 
 function setAuthMode(registerMode) {
   state.registerMode = registerMode;
-  document.querySelectorAll('.register-only').forEach((el) => el.classList.toggle('hidden', !registerMode));
+  $$('.register-only').forEach((el) => toggleHidden(el, !registerMode));
   $('#auth-title').textContent = registerMode ? 'Crear cuenta' : 'Calculadora compartida';
   $('#auth-subtitle').textContent = registerMode ? 'Usá el mismo correo al que te invitó la administradora.' : 'Ingresá con tu cuenta del equipo.';
   $('#auth-submit').textContent = registerMode ? 'Crear cuenta' : 'Ingresar';
@@ -51,7 +43,7 @@ async function refreshWorkspace() {
     .maybeSingle();
 
   if (membershipError) {
-    setStatus(messageFrom(membershipError), 'error');
+    reportError(membershipError);
     return;
   }
   if (!membership) {
@@ -66,7 +58,7 @@ async function refreshWorkspace() {
     state.client.from('garments').select('*').eq('business_id', membership.business_id).order('created_at')
   ]);
   if (settingsResult.error || garmentsResult.error) {
-    setStatus(messageFrom(settingsResult.error || garmentsResult.error), 'error');
+    reportError(settingsResult.error || garmentsResult.error);
     return;
   }
   state.settings = settingsResult.data;
@@ -74,8 +66,8 @@ async function refreshWorkspace() {
   showOnly('#app-view');
   $('#business-label').textContent = state.business?.name || 'Jusa Boutique';
   $('#user-label').textContent = state.user.email;
-  $('#role-label').textContent = membership.role === 'admin' ? 'Administradora' : 'Vendedora';
-  $('#team-card').classList.toggle('hidden', membership.role !== 'admin');
+  $('#role-label').textContent = roleLabel(membership.role);
+  toggleHidden('#team-card', membership.role !== 'admin');
   renderSettings();
   renderGarments();
   if (membership.role === 'admin') await loadInvitations();
@@ -96,13 +88,13 @@ function renderSettings() {
 
 function calculate() {
   if (!state.settings) return;
-  const rate = Math.max(0, number($('#cotizacion').value));
-  const travel = Math.max(0, number($('#pasajes').value)) + Math.max(0, number($('#viaticos').value)) + Math.max(0, number($('#flete').value));
-  const garmentData = [...document.querySelectorAll('#garment-rows tr')].map((row) => ({
+  const rate = settingField('#cotizacion');
+  const travel = settingField('#pasajes') + settingField('#viaticos') + settingField('#flete');
+  const garmentData = garmentRows().map((row) => ({
     row,
-    quantity: Math.max(0, number(row.querySelector('[data-field="quantity"]').value)),
-    price: Math.max(0, number(row.querySelector('[data-field="price_brl"]').value)),
-    profit: Math.max(0, number(row.querySelector('[data-field="profit_percentage"]').value))
+    quantity: fieldNumber(row, 'quantity'),
+    price: fieldNumber(row, 'price_brl'),
+    profit: fieldNumber(row, 'profit_percentage')
   }));
   const totalUnits = garmentData.reduce((sum, item) => sum + item.quantity, 0);
   const totalPurchase = garmentData.reduce((sum, item) => sum + item.quantity * item.price * rate, 0);
@@ -119,44 +111,39 @@ function calculate() {
     const safeProfit = useMargin ? Math.min(item.profit, 99.99) : item.profit;
     const sale = useMargin ? realCost / (1 - safeProfit / 100) : realCost * (1 + safeProfit / 100);
     totalProfit += (sale - realCost) * item.quantity;
-    item.row.querySelector('[data-output="purchase"]').textContent = formatPYG(purchase);
-    item.row.querySelector('[data-output="travel"]').textContent = formatPYG(travelPerItem);
-    item.row.querySelector('[data-output="real"]').textContent = formatPYG(realCost);
-    item.row.querySelector('[data-output="sale"]').textContent = formatPYG(sale);
+    setOutput(item.row, 'purchase', formatPYG(purchase));
+    setOutput(item.row, 'travel', formatPYG(travelPerItem));
+    setOutput(item.row, 'real', formatPYG(realCost));
+    setOutput(item.row, 'sale', formatPYG(sale));
   });
   $('#total-expenses').textContent = formatPYG(travel);
-  $('#total-units').textContent = `${totalUnits.toLocaleString('es-PY')} un.`;
+  $('#total-units').textContent = formatUnits(totalUnits);
   $('#total-purchase').textContent = formatPYG(totalPurchase);
   $('#total-profit').textContent = formatPYG(totalProfit);
 }
 
-function inputFor(field, value, attributes = '') {
-  const input = document.createElement('input');
-  input.dataset.field = field;
-  input.value = value;
-  input.setAttribute('aria-label', field);
-  Object.entries(attributes).forEach(([key, attrValue]) => input.setAttribute(key, attrValue));
-  return input;
-}
+const inputFor = (field, value, attributes = {}) =>
+  createElement('input', { dataset: { field }, attributes: { ...attributes, value }, ariaLabel: field });
+
+const outputFor = (name) => createElement('span', { className: 'money', dataset: { output: name } });
 
 function renderGarments() {
   const body = $('#garment-rows');
   body.replaceChildren();
   state.garments.forEach((garment) => {
-    const row = document.createElement('tr');
-    row.dataset.id = garment.id;
-    const cells = [document.createElement('td'), document.createElement('td'), document.createElement('td')];
-    cells[0].append(inputFor('name', garment.name, { type: 'text', maxlength: '160' }));
-    cells[1].append(inputFor('quantity', garment.quantity, { type: 'number', min: '0.01', step: '0.01' }));
-    cells[2].append(inputFor('price_brl', garment.price_brl, { type: 'number', min: '0', step: '0.01' }));
-    cells.forEach((cell) => row.append(cell));
-    ['purchase', 'travel', 'real'].forEach((output) => { const cell = document.createElement('td'); const span = document.createElement('span'); span.dataset.output = output; span.className = 'money'; cell.append(span); row.append(cell); });
-    const profitCell = document.createElement('td');
-    profitCell.append(inputFor('profit_percentage', garment.profit_percentage, { type: 'number', min: '0', step: '0.01' }));
-    row.append(profitCell);
-    const saleCell = document.createElement('td'); const sale = document.createElement('span'); sale.dataset.output = 'sale'; sale.className = 'money'; saleCell.append(sale); row.append(saleCell);
-    const deleteCell = document.createElement('td'); const del = document.createElement('button'); del.type = 'button'; del.className = 'delete'; del.textContent = '×'; del.ariaLabel = `Eliminar ${garment.name}`; del.addEventListener('click', () => deleteGarment(garment.id)); deleteCell.append(del); row.append(deleteCell);
-    row.querySelectorAll('input').forEach((input) => input.addEventListener('input', () => queueGarmentSave(garment.id)));
+    const row = createElement('tr', { dataset: { id: garment.id } });
+    const del = createElement('button', { className: 'delete', text: '×', attributes: { type: 'button' }, ariaLabel: `Eliminar ${garment.name}` });
+    del.addEventListener('click', () => deleteGarment(garment.id));
+    row.append(
+      cellWith(inputFor('name', garment.name, { type: 'text', maxlength: '160' })),
+      cellWith(inputFor('quantity', garment.quantity, { type: 'number', min: '0.01', step: '0.01' })),
+      cellWith(inputFor('price_brl', garment.price_brl, { type: 'number', min: '0', step: '0.01' })),
+      ...['purchase', 'travel', 'real'].map((output) => cellWith(outputFor(output))),
+      cellWith(inputFor('profit_percentage', garment.profit_percentage, { type: 'number', min: '0', step: '0.01' })),
+      cellWith(outputFor('sale')),
+      cellWith(del)
+    );
+    $$('input', row).forEach((input) => input.addEventListener('input', () => queueGarmentSave(garment.id)));
     body.append(row);
   });
   updateProfitInputLimits();
@@ -165,15 +152,15 @@ function renderGarments() {
 
 function updateProfitInputLimits() {
   const max = $('#profit-mode').value === 'margin' ? '99.99' : '999.99';
-  document.querySelectorAll('[data-field="profit_percentage"]').forEach((input) => input.max = max);
+  $$('[data-field="profit_percentage"]').forEach((input) => input.max = max);
 }
 
 function currentSettings() {
   return {
-    cotizacion: Math.max(0, number($('#cotizacion').value)),
-    pasajes: Math.max(0, number($('#pasajes').value)),
-    viaticos: Math.max(0, number($('#viaticos').value)),
-    flete: Math.max(0, number($('#flete').value)),
+    cotizacion: settingField('#cotizacion'),
+    pasajes: settingField('#pasajes'),
+    viaticos: settingField('#viaticos'),
+    flete: settingField('#flete'),
     profit_mode: $('#profit-mode').value,
     allocation_method: $('#allocation-method').value
   };
@@ -188,7 +175,7 @@ function queueSettingsSave() {
 async function saveSettings() {
   const values = currentSettings();
   const { error } = await state.client.from('business_settings').update(values).eq('business_id', state.membership.business_id);
-  if (error) setStatus(messageFrom(error), 'error');
+  if (error) reportError(error);
   else { state.settings = { ...state.settings, ...values }; setStatus('Cambios guardados.', 'success'); }
 }
 
@@ -199,16 +186,16 @@ function queueGarmentSave(id) {
 }
 
 async function saveGarment(id) {
-  const row = document.querySelector(`#garment-rows tr[data-id="${id}"]`);
+  const row = $(`#garment-rows tr[data-id="${id}"]`);
   if (!row) return;
   const payload = {};
-  row.querySelectorAll('[data-field]').forEach((input) => { payload[input.dataset.field] = input.dataset.field === 'name' ? input.value.trim() : number(input.value); });
+  $$('[data-field]', row).forEach((input) => { payload[input.dataset.field] = input.dataset.field === 'name' ? input.value.trim() : number(input.value); });
   if (!payload.name) { setStatus('Cada prenda necesita un nombre.', 'error'); return; }
   if (payload.quantity <= 0 || payload.price_brl < 0 || payload.profit_percentage < 0 || ($('#profit-mode').value === 'margin' && payload.profit_percentage >= 100)) {
     setStatus('Revisá cantidad, costos y porcentaje de ganancia.', 'error'); return;
   }
   const { data, error } = await state.client.from('garments').update(payload).eq('id', id).select().single();
-  if (error) { setStatus(messageFrom(error), 'error'); return; }
+  if (error) { reportError(error); return; }
   state.garments = state.garments.map((item) => item.id === id ? data : item);
   setStatus('Prenda actualizada.', 'success');
 }
@@ -217,17 +204,17 @@ async function addGarment() {
   const { data, error } = await state.client.from('garments').insert({
     business_id: state.membership.business_id, name: 'Nueva prenda', quantity: 1, price_brl: 0, profit_percentage: 100, updated_by: state.user.id
   }).select().single();
-  if (error) { setStatus(messageFrom(error), 'error'); return; }
+  if (error) { reportError(error); return; }
   state.garments.push(data);
   renderGarments();
-  document.querySelector(`#garment-rows tr[data-id="${data.id}"] [data-field="name"]`)?.focus();
+  $(`#garment-rows tr[data-id="${data.id}"] [data-field="name"]`)?.focus();
   setStatus('Prenda agregada.', 'success');
 }
 
 async function deleteGarment(id) {
   if (!window.confirm('¿Eliminar esta prenda del inventario compartido?')) return;
   const { error } = await state.client.from('garments').delete().eq('id', id);
-  if (error) { setStatus(messageFrom(error), 'error'); return; }
+  if (error) { reportError(error); return; }
   state.garments = state.garments.filter((item) => item.id !== id);
   renderGarments();
   setStatus('Prenda eliminada.', 'success');
@@ -236,54 +223,46 @@ async function deleteGarment(id) {
 async function createBusiness(event) {
   event.preventDefault();
   const name = $('#business-name').value.trim();
-  const errorEl = $('#business-error');
-  errorEl.classList.add('hidden');
+  setError('#business-error');
   const { error } = await state.client.rpc('create_business', { business_name: name });
-  if (error) { errorEl.textContent = messageFrom(error); errorEl.classList.remove('hidden'); return; }
+  if (error) { setError('#business-error', messageFrom(error)); return; }
   await refreshWorkspace();
 }
 
 async function loadInvitations() {
   const { data, error } = await state.client.from('invitations').select('id, email, role, created_at').eq('business_id', state.membership.business_id).order('created_at');
-  if (error) { $('#invite-status').textContent = messageFrom(error); return; }
+  if (error) { setStatusText('#invite-status', messageFrom(error), 'error'); return; }
   const list = $('#invite-list'); list.replaceChildren();
-  data.forEach((invite) => { const item = document.createElement('li'); item.textContent = `${invite.email} · ${invite.role === 'admin' ? 'Administradora' : 'Vendedora'} (pendiente)`; list.append(item); });
+  list.append(...data.map((invite) => createElement('li', { text: `${invite.email} · ${roleLabel(invite.role)} (pendiente)` })));
 }
 
 async function createInvitation(event) {
   event.preventDefault();
   const email = $('#invite-email').value.trim().toLowerCase();
   const role = $('#invite-role').value;
-  const status = $('#invite-status'); status.className = 'status'; status.textContent = '';
+  setStatusText('#invite-status');
   const { data, error } = await state.client.rpc('invite_member', { target_business_id: state.membership.business_id, target_email: email, target_role: role });
-  if (error) { status.textContent = messageFrom(error); status.classList.add('error'); return; }
+  if (error) { setStatusText('#invite-status', messageFrom(error), 'error'); return; }
   $('#invite-form').reset();
-  status.textContent = data === 'joined'
+  setStatusText('#invite-status', data === 'joined'
     ? `${email} ya tenía una cuenta y ahora tiene acceso al inventario.`
-    : `Invitación preparada para ${email}. Avisale que cree su cuenta con ese correo.`;
-  status.classList.add('success');
+    : `Invitación preparada para ${email}. Avisale que cree su cuenta con ese correo.`, 'success');
   await loadInvitations();
 }
 
 function exportCsv() {
-  const rows = [...document.querySelectorAll('#garment-rows tr')];
-  const escape = (value) => {
-    let text = String(value ?? '');
-    if (/^[=+\-@]/.test(text)) text = `'${text}`;
-    return `"${text.replace(/"/g, '""')}"`;
-  };
   const lines = [
     'sep=;', 'JUSA BOUTIQUE - REPORTE DE CALCULADORA',
     `Fecha;${new Date().toLocaleDateString('es-PY')}`,
     `Cotización BRL/PYG;${$('#cotizacion').value}`, `Pasajes;${$('#pasajes').value}`, `Viáticos;${$('#viaticos').value}`, `Fletes;${$('#flete').value}`, '',
     'Prenda;Cantidad;Precio BRL;Compra PYG;Viaje PYG;Costo Real;Ganancia %;Precio Venta'
   ];
-  rows.forEach((row) => lines.push([
-    escape(row.querySelector('[data-field="name"]').value), row.querySelector('[data-field="quantity"]').value, row.querySelector('[data-field="price_brl"]').value,
-    row.querySelector('[data-output="purchase"]').textContent.replace(/\D/g, ''), row.querySelector('[data-output="travel"]').textContent.replace(/\D/g, ''), row.querySelector('[data-output="real"]').textContent.replace(/\D/g, ''), row.querySelector('[data-field="profit_percentage"]').value, row.querySelector('[data-output="sale"]').textContent.replace(/\D/g, '')
+  garmentRows().forEach((row) => lines.push([
+    csvCell(fieldValue(row, 'name')), fieldValue(row, 'quantity'), fieldValue(row, 'price_brl'),
+    outputDigits(row, 'purchase'), outputDigits(row, 'travel'), outputDigits(row, 'real'),
+    fieldValue(row, 'profit_percentage'), outputDigits(row, 'sale')
   ].join(';')));
-  const url = URL.createObjectURL(new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' }));
-  const link = document.createElement('a'); link.href = url; link.download = `JusaBoutique_${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(url);
+  downloadFile(`JusaBoutique_${new Date().toISOString().slice(0, 10)}.csv`, `\uFEFF${lines.join('\n')}`);
 }
 
 async function handleAuth(event) {
@@ -307,15 +286,21 @@ async function completeInvitation(event) {
   event.preventDefault();
   const password = $('#invite-password').value;
   const confirmation = $('#invite-password-confirm').value;
-  const errorEl = $('#invite-accept-error');
-  errorEl.classList.add('hidden');
-  if (password.length < 8) { errorEl.textContent = 'La contraseña debe tener al menos 8 caracteres.'; errorEl.classList.remove('hidden'); return; }
-  if (password !== confirmation) { errorEl.textContent = 'Las contraseñas no coinciden.'; errorEl.classList.remove('hidden'); return; }
+  setError('#invite-accept-error');
+  if (password.length < 8) { setError('#invite-accept-error', 'La contraseña debe tener al menos 8 caracteres.'); return; }
+  if (password !== confirmation) { setError('#invite-accept-error', 'Las contraseñas no coinciden.'); return; }
   const { error } = await state.client.auth.updateUser({ password });
-  if (error) { errorEl.textContent = messageFrom(error); errorEl.classList.remove('hidden'); return; }
+  if (error) { setError('#invite-accept-error', messageFrom(error)); return; }
   state.inviteFlow = false;
   history.replaceState({}, document.title, window.location.pathname);
   await refreshWorkspace();
+}
+
+async function applySession(session) {
+  state.user = session?.user || null;
+  if (state.user && state.inviteFlow) showOnly('#invite-accept-view');
+  else if (state.user) await refreshWorkspace();
+  else { showOnly('#auth-view'); setAuthMode(false); }
 }
 
 async function initialize() {
@@ -337,17 +322,9 @@ async function initialize() {
     $(selector).addEventListener('change', queueSettingsSave);
   });
   $('#profit-mode').addEventListener('change', updateProfitInputLimits);
-  state.client.auth.onAuthStateChange((_event, session) => {
-    state.user = session?.user || null;
-    if (state.user && state.inviteFlow) showOnly('#invite-accept-view');
-    else if (state.user) refreshWorkspace();
-    else showOnly('#auth-view');
-  });
+  state.client.auth.onAuthStateChange((_event, session) => { applySession(session); });
   const { data: { session } } = await state.client.auth.getSession();
-  state.user = session?.user || null;
-  if (state.user && state.inviteFlow) showOnly('#invite-accept-view');
-  else if (state.user) await refreshWorkspace();
-  else { showOnly('#auth-view'); setAuthMode(false); }
+  await applySession(session);
 }
 
 initialize();
