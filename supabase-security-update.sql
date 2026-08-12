@@ -45,13 +45,21 @@ begin
 end;
 $$;
 
+-- Mantiene el perfil al día cuando el correo se verifica o se cambia, y acepta
+-- las invitaciones dirigidas al correo recién verificado.
 create or replace function public.handle_user_confirmed()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
 begin
-  if new.email_confirmed_at is not null and old.email_confirmed_at is null then
+  update public.profiles set email = lower(coalesce(new.email, ''))
+  where id = new.id and email is distinct from lower(coalesce(new.email, ''));
+
+  if new.email_confirmed_at is not null and (
+    old.email_confirmed_at is null
+    or lower(coalesce(old.email, '')) is distinct from lower(coalesce(new.email, ''))
+  ) then
     perform public.accept_invitations(new.id, new.email);
   end if;
   return new;
@@ -60,10 +68,17 @@ $$;
 
 drop trigger if exists on_auth_user_confirmed on auth.users;
 create trigger on_auth_user_confirmed
-  after update of email_confirmed_at on auth.users
+  after update of email, email_confirmed_at on auth.users
   for each row execute procedure public.handle_user_confirmed();
 
--- 2. Validación de correo al invitar.
+-- Sincroniza los perfiles que quedaron con un correo viejo.
+update public.profiles p
+set email = lower(coalesce(u.email, ''))
+from auth.users u
+where u.id = p.id and p.email is distinct from lower(coalesce(u.email, ''));
+
+-- 2. Validación de correo al invitar y membresía inmediata solo para cuentas
+-- con el correo verificado.
 create or replace function public.invite_member(
   target_business_id uuid,
   target_email text,
@@ -80,7 +95,9 @@ begin
   if coalesce(trim(target_email), '') !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
     raise exception 'Ingresá un correo válido';
   end if;
-  select id into target_user_id from public.profiles where lower(email) = lower(trim(target_email));
+  select u.id into target_user_id
+  from auth.users u
+  where lower(u.email) = lower(trim(target_email)) and u.email_confirmed_at is not null;
   if target_user_id is not null then
     insert into public.memberships (business_id, user_id, role)
     values (target_business_id, target_user_id, target_role)

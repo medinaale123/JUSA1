@@ -111,13 +111,21 @@ begin
 end;
 $$;
 
+-- Mantiene el perfil al día cuando el correo se verifica o se cambia, y acepta
+-- las invitaciones dirigidas al correo recién verificado.
 create or replace function public.handle_user_confirmed()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
 begin
-  if new.email_confirmed_at is not null and old.email_confirmed_at is null then
+  update public.profiles set email = lower(coalesce(new.email, ''))
+  where id = new.id and email is distinct from lower(coalesce(new.email, ''));
+
+  if new.email_confirmed_at is not null and (
+    old.email_confirmed_at is null
+    or lower(coalesce(old.email, '')) is distinct from lower(coalesce(new.email, ''))
+  ) then
     perform public.accept_invitations(new.id, new.email);
   end if;
   return new;
@@ -129,7 +137,7 @@ create trigger on_auth_user_created
   for each row execute procedure public.handle_new_user();
 
 create trigger on_auth_user_confirmed
-  after update of email_confirmed_at on auth.users
+  after update of email, email_confirmed_at on auth.users
   for each row execute procedure public.handle_user_confirmed();
 
 create or replace function public.is_business_member(target_business_id uuid)
@@ -194,7 +202,12 @@ begin
   if coalesce(trim(target_email), '') !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
     raise exception 'Ingresá un correo válido';
   end if;
-  select id into target_user_id from public.profiles where lower(email) = lower(trim(target_email));
+  -- Solo una cuenta con el correo verificado puede unirse en el momento: si no,
+  -- alguien que se registre con el correo de otra persona sin confirmarlo
+  -- recibiría la membresía en su lugar.
+  select u.id into target_user_id
+  from auth.users u
+  where lower(u.email) = lower(trim(target_email)) and u.email_confirmed_at is not null;
   if target_user_id is not null then
     insert into public.memberships (business_id, user_id, role)
     values (target_business_id, target_user_id, target_role)
