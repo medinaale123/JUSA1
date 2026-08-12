@@ -12,6 +12,8 @@
   </head>
   <body>
     <main class="page">
+      <section id="fatal-error" class="notice hidden" role="alert"></section>
+
       <section id="setup-warning" class="notice hidden">
         Configurá <code>config.js</code> con la URL y la clave anon de Supabase antes de abrir la aplicación.
       </section>
@@ -142,6 +144,17 @@
         </section>
       </section>
     </main>
+    <script>
+      // Los errores de carga (config.js, app.js o el SDK de Supabase por CDN)
+      // no llegan al código de la aplicación: se muestran acá.
+      window.addEventListener('error', (event) => {
+        if (!(event.target instanceof HTMLScriptElement)) return;
+        const notice = document.getElementById('fatal-error');
+        if (!notice) return;
+        notice.textContent = 'No pudimos cargar la aplicación. Revisá tu conexión y recargá la página.';
+        notice.classList.remove('hidden');
+      }, true);
+    </script>
     <script src="config.js"></script>
     <script type="module" src="app.js"></script>
   </body>
