@@ -12,12 +12,18 @@ const state = {
   settings: null, 
   trips: [], 
   currentTripId: null, 
-  isInventoryView: false, 
+  currentView: 'calc', // 'calc', 'inventory', 'sold'
   garments: [], 
   registerMode: false, 
+  contextTripTarget: null,
   settingsTimer: null, 
   garmentTimers: new Map() 
 };
+
+const CATEGORIES = [
+  'General', 'Remeras', 'Blusas', 'Jeans', 'Pantalones', 'Vestidos', 'Enterizos',
+  'Faldas / Polleras', 'Abrigos / Sacos', 'Calzados', 'Accesorios', 'Otros'
+];
 
 const formatPYG = (value) => `${Math.round(Number(value) || 0).toLocaleString('es-PY')} PYG`;
 const formatDate = (isoString) => isoString ? new Date(isoString).toLocaleDateString('es-PY', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
@@ -33,19 +39,15 @@ const show = (selector) => $(selector).classList.remove('hidden');
 const hide = (selector) => $(selector).classList.add('hidden');
 
 function messageFrom(error, fallback = 'Ocurrió un error. Intentá nuevamente.') {
-  console.error(error); 
-  return error?.message || fallback;
+  console.error(error); return error?.message || fallback;
 }
 
 function authError(text = '') {
-  const el = $('#auth-error');
-  el.textContent = text;
-  el.classList.toggle('hidden', !text);
+  const el = $('#auth-error'); el.textContent = text; el.classList.toggle('hidden', !text);
 }
 
 function showOnly(view) {
-  ['#auth-view', '#onboarding-view', '#invite-accept-view', '#app-view'].forEach(hide);
-  show(view);
+  ['#auth-view', '#onboarding-view', '#invite-accept-view', '#app-view'].forEach(hide); show(view);
 }
 
 function setAuthMode(registerMode) {
@@ -108,18 +110,13 @@ function renderSidebarNav() {
   const container = $('#sidebar-trips-list');
   container.replaceChildren();
 
-  // Estado activo en "Inventario Completo"
-  if (state.isInventoryView) {
-    $('#nav-inventory').classList.add('active');
-  } else {
-    $('#nav-inventory').classList.remove('active');
-  }
+  $('#nav-inventory').classList.toggle('active', state.currentView === 'inventory');
+  $('#nav-sold').classList.toggle('active', state.currentView === 'sold');
 
-  // Renderizar cada viaje con su fecha en la barra lateral
   state.trips.forEach((trip) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = `sidebar-item trip-item-btn ${!state.isInventoryView && trip.id === state.currentTripId ? 'active' : ''}`;
+    btn.className = `sidebar-item trip-item-btn ${state.currentView === 'calc' && trip.id === state.currentTripId ? 'active' : ''}`;
 
     const titleSpan = document.createElement('span');
     titleSpan.textContent = `✈️ ${trip.name}`;
@@ -129,12 +126,22 @@ function renderSidebarNav() {
     dateSpan.textContent = formatDate(trip.created_at);
 
     btn.append(titleSpan, dateSpan);
+
     btn.addEventListener('click', () => {
-      state.isInventoryView = false;
+      state.currentView = 'calc';
       state.currentTripId = trip.id;
       $('#sidebar').classList.remove('open');
       renderSidebarNav();
       loadCurrentView();
+    });
+
+    btn.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      state.contextTripTarget = trip;
+      const ctxMenu = $('#trip-context-menu');
+      ctxMenu.style.top = `${e.clientY}px`;
+      ctxMenu.style.left = `${e.clientX}px`;
+      show('#trip-context-menu');
     });
 
     container.append(btn);
@@ -142,12 +149,17 @@ function renderSidebarNav() {
 }
 
 function loadCurrentView() {
-  if (state.isInventoryView) {
-    hide('#view-calc');
+  hide('#view-calc');
+  hide('#view-inv');
+  hide('#view-sold');
+
+  if (state.currentView === 'inventory') {
     show('#view-inv');
     renderAllInventory();
+  } else if (state.currentView === 'sold') {
+    show('#view-sold');
+    renderSoldInventory();
   } else {
-    hide('#view-inv');
     show('#view-calc');
     renderSettings();
     renderGarments();
@@ -212,71 +224,61 @@ function calculate() {
   $('#total-profit').textContent = formatPYG(totalProfit);
 }
 
-function renderAllInventory() {
-  const body = $('#all-garments-rows');
-  body.replaceChildren();
-
-  const useMargin = state.settings.profit_mode === 'margin';
-  const useValue = state.settings.allocation_method === 'value';
-
-  const tripTotals = {};
-  state.trips.forEach((trip) => {
-    const tripGarments = state.garments.filter((g) => g.trip_id === trip.id);
-    const travel = Number(trip.pasajes) + Number(trip.viaticos) + Number(trip.flete);
-    const totalUnits = tripGarments.reduce((sum, item) => sum + Number(item.quantity), 0);
-    const totalPurchase = tripGarments.reduce((sum, item) => sum + Number(item.quantity) * Number(item.price_brl) * Number(trip.cotizacion), 0);
-    tripTotals[trip.id] = { travel, totalUnits, totalPurchase, rate: Number(trip.cotizacion) };
-  });
-
-  state.garments.forEach((garment) => {
-    const trip = state.trips.find((t) => t.id === garment.trip_id);
-    if (!trip) return;
-
-    const totals = tripTotals[trip.id];
-    const purchase = garment.price_brl * totals.rate;
-    const travelPerItem = useValue && totals.totalPurchase > 0 ? purchase * (totals.travel / totals.totalPurchase) : totals.totalUnits > 0 ? totals.travel / totals.totalUnits : 0;
-    const realCost = purchase + travelPerItem;
-    const safeProfit = useMargin ? Math.min(garment.profit_percentage, 99.99) : garment.profit_percentage;
-    const sale = useMargin ? realCost / (1 - safeProfit / 100) : realCost * (1 + safeProfit / 100);
-
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td style="text-align:left; font-weight:600;">${garment.name}</td>
-      <td class="money" style="font-size:14px;">${formatPYG(sale)}</td>
-      <td style="text-align:right; color:var(--muted); font-size:12px;">${trip.name} (${formatDate(trip.created_at)})</td>
-    `;
-    body.append(row);
-  });
-}
-
-function inputFor(field, value, attributes = {}) {
-  const input = document.createElement('input');
-  input.dataset.field = field;
-  input.value = value;
-  input.setAttribute('aria-label', field);
-  Object.entries(attributes).forEach(([key, attrValue]) => input.setAttribute(key, attrValue));
-  return input;
-}
-
 function renderGarments() {
   const body = $('#garment-rows');
   body.replaceChildren();
-  const currentGarments = state.garments.filter((g) => g.trip_id === state.currentTripId);
 
-  currentGarments.forEach((garment) => {
+  const query = $('#search-input').value.toLowerCase().trim();
+  const selectedCat = $('#filter-category').value;
+  const sortBy = $('#sort-select').value;
+
+  let filtered = state.garments.filter((g) => g.trip_id === state.currentTripId);
+
+  if (query) filtered = filtered.filter((g) => g.name.toLowerCase().includes(query));
+  if (selectedCat !== 'ALL') filtered = filtered.filter((g) => (g.category || 'General') === selectedCat);
+
+  filtered.sort((a, b) => {
+    if (sortBy === 'NAME_ASC') return a.name.localeCompare(b.name);
+    if (sortBy === 'PRICE_DESC') return b.price_brl - a.price_brl;
+    if (sortBy === 'PRICE_ASC') return a.price_brl - b.price_brl;
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
+
+  filtered.forEach((garment) => {
     const row = document.createElement('tr');
     row.dataset.id = garment.id;
+    if (garment.is_sold) row.classList.add('sold-row');
 
+    // 1. Casilla Vendido
+    const soldCell = document.createElement('td');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'sold-checkbox';
+    checkbox.checked = Boolean(garment.is_sold);
+    checkbox.addEventListener('change', (e) => {
+      toggleSoldStatus(garment.id, e.target.checked);
+    });
+    soldCell.append(checkbox);
+
+    // 2. Nombre
     const nameCell = document.createElement('td');
     nameCell.append(inputFor('name', garment.name, { type: 'text', maxlength: '160' }));
 
+    // 3. Categoría
+    const catCell = document.createElement('td');
+    catCell.append(selectForCategory(garment.category || 'General', (newCat) => {
+      saveGarmentField(garment.id, 'category', newCat);
+    }));
+
+    // 4. Cantidad
     const qtyCell = document.createElement('td');
     qtyCell.append(inputFor('quantity', garment.quantity, { type: 'number', min: '0.01', step: '0.01' }));
 
+    // 5. Costo BRL
     const priceCell = document.createElement('td');
     priceCell.append(inputFor('price_brl', garment.price_brl, { type: 'number', min: '0', step: '0.01' }));
 
-    row.append(nameCell, qtyCell, priceCell);
+    row.append(soldCell, nameCell, catCell, qtyCell, priceCell);
 
     ['purchase', 'travel', 'real'].forEach((output) => {
       const cell = document.createElement('td');
@@ -307,12 +309,210 @@ function renderGarments() {
     deleteCell.append(delBtn);
     row.append(deleteCell);
 
-    row.querySelectorAll('input').forEach((input) => input.addEventListener('input', () => queueGarmentSave(garment.id)));
+    row.querySelectorAll('input:not([type="checkbox"])').forEach((input) => input.addEventListener('input', () => queueGarmentSave(garment.id)));
     body.append(row);
   });
 
   updateProfitInputLimits();
   calculate();
+}
+
+async function toggleSoldStatus(id, isSold) {
+  const { error } = await state.client.from('garments').update({ is_sold: isSold }).eq('id', id);
+  if (error) { setStatus(messageFrom(error), 'error'); return; }
+
+  const idx = state.garments.findIndex((g) => g.id === id);
+  if (idx > -1) state.garments[idx].is_sold = isSold;
+
+  renderGarments();
+  setStatus(isSold ? 'Prenda marcada como VENDIDA.' : 'Prenda devuelta al stock.', 'success');
+}
+
+function selectForCategory(currentCat, onChange) {
+  const select = document.createElement('select');
+  CATEGORIES.forEach((cat) => {
+    const opt = document.createElement('option');
+    opt.value = cat; opt.textContent = cat;
+    if (cat === currentCat) opt.selected = true;
+    select.append(opt);
+  });
+  select.addEventListener('change', (e) => onChange(e.target.value));
+  return select;
+}
+
+async function saveGarmentField(id, field, value) {
+  const { error } = await state.client.from('garments').update({ [field]: value }).eq('id', id);
+  if (error) setStatus(messageFrom(error), 'error');
+  else {
+    const idx = state.garments.findIndex((g) => g.id === id);
+    if (idx > -1) state.garments[idx][field] = value;
+    setStatus('Cambio guardado.', 'success');
+  }
+}
+
+// INVENTARIO COMPLETO (Solo muestra prendas NO vendidas)
+function renderAllInventory() {
+  const body = $('#all-garments-rows');
+  body.replaceChildren();
+
+  const query = $('#inv-search-input').value.toLowerCase().trim();
+  const selectedCat = $('#inv-filter-category').value;
+  const useMargin = state.settings.profit_mode === 'margin';
+  const useValue = state.settings.allocation_method === 'value';
+
+  const tripTotals = {};
+  state.trips.forEach((trip) => {
+    const tripGarments = state.garments.filter((g) => g.trip_id === trip.id);
+    const travel = Number(trip.pasajes) + Number(trip.viaticos) + Number(trip.flete);
+    const totalUnits = tripGarments.reduce((sum, item) => sum + Number(item.quantity), 0);
+    const totalPurchase = tripGarments.reduce((sum, item) => sum + Number(item.quantity) * Number(item.price_brl) * Number(trip.cotizacion), 0);
+    tripTotals[trip.id] = { travel, totalUnits, totalPurchase, rate: Number(trip.cotizacion) };
+  });
+
+  // Filtrar solo las que NO están vendidas
+  let filtered = state.garments.filter((g) => !g.is_sold);
+  if (query) filtered = filtered.filter((g) => g.name.toLowerCase().includes(query));
+  if (selectedCat !== 'ALL') filtered = filtered.filter((g) => (g.category || 'General') === selectedCat);
+
+  $('#stock-count-badge').textContent = `${filtered.length} prendas en stock`;
+
+  filtered.forEach((garment) => {
+    const trip = state.trips.find((t) => t.id === garment.trip_id);
+    if (!trip) return;
+
+    const totals = tripTotals[trip.id];
+    const purchase = garment.price_brl * totals.rate;
+    const travelPerItem = useValue && totals.totalPurchase > 0 ? purchase * (totals.travel / totals.totalPurchase) : totals.totalUnits > 0 ? totals.travel / totals.totalUnits : 0;
+    const realCost = purchase + travelPerItem;
+    const safeProfit = useMargin ? Math.min(garment.profit_percentage, 99.99) : garment.profit_percentage;
+    const sale = useMargin ? realCost / (1 - safeProfit / 100) : realCost * (1 + safeProfit / 100);
+
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td style="text-align:left; font-weight:600;">${garment.name}</td>
+      <td><span class="role">${garment.category || 'General'}</span></td>
+      <td class="money" style="font-size:14px;">${formatPYG(sale)}</td>
+      <td style="text-align:right; color:var(--muted); font-size:12px;">${trip.name} (${formatDate(trip.created_at)})</td>
+    `;
+    body.append(row);
+  });
+}
+
+// VISTA DE PRENDAS VENDIDAS
+function renderSoldInventory() {
+  const body = $('#sold-garments-rows');
+  body.replaceChildren();
+
+  const useMargin = state.settings.profit_mode === 'margin';
+  const useValue = state.settings.allocation_method === 'value';
+
+  const tripTotals = {};
+  state.trips.forEach((trip) => {
+    const tripGarments = state.garments.filter((g) => g.trip_id === trip.id);
+    const travel = Number(trip.pasajes) + Number(trip.viaticos) + Number(trip.flete);
+    const totalUnits = tripGarments.reduce((sum, item) => sum + Number(item.quantity), 0);
+    const totalPurchase = tripGarments.reduce((sum, item) => sum + Number(item.quantity) * Number(item.price_brl) * Number(trip.cotizacion), 0);
+    tripTotals[trip.id] = { travel, totalUnits, totalPurchase, rate: Number(trip.cotizacion) };
+  });
+
+  const soldItems = state.garments.filter((g) => g.is_sold);
+  $('#sold-count-badge').textContent = `${soldItems.length} prendas vendidas`;
+
+  let totalRecaudado = 0;
+  let totalGanancia = 0;
+
+  soldItems.forEach((garment) => {
+    const trip = state.trips.find((t) => t.id === garment.trip_id);
+    if (!trip) return;
+
+    const totals = tripTotals[trip.id];
+    const purchase = garment.price_brl * totals.rate;
+    const travelPerItem = useValue && totals.totalPurchase > 0 ? purchase * (totals.travel / totals.totalPurchase) : totals.totalUnits > 0 ? totals.travel / totals.totalUnits : 0;
+    const realCost = purchase + travelPerItem;
+    const safeProfit = useMargin ? Math.min(garment.profit_percentage, 99.99) : garment.profit_percentage;
+    const sale = useMargin ? realCost / (1 - safeProfit / 100) : realCost * (1 + safeProfit / 100);
+
+    totalRecaudado += sale * garment.quantity;
+    totalGanancia += (sale - realCost) * garment.quantity;
+
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td style="text-align:left; font-weight:600;">${garment.name}</td>
+      <td><span class="role">${garment.category || 'General'}</span></td>
+      <td class="money" style="font-size:14px;">${formatPYG(sale)}</td>
+      <td style="color:var(--muted); font-size:12px;">${trip.name}</td>
+      <td>
+        <button type="button" class="small-button" style="padding:4px 8px; font-size:11px;">Restaurar</button>
+      </td>
+    `;
+
+    row.querySelector('button').addEventListener('click', () => {
+      toggleSoldStatus(garment.id, false);
+      renderSoldInventory();
+    });
+
+    body.append(row);
+  });
+
+  $('#sold-total-amount').textContent = formatPYG(totalRecaudado);
+  $('#sold-total-profit').textContent = formatPYG(totalGanancia);
+}
+
+function handleExcelUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = window.XLSX.read(data, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = window.XLSX.utils.sheet_to_json(firstSheet);
+
+      if (!rows || rows.length === 0) {
+        setStatus('El archivo Excel está vacío.', 'error'); return;
+      }
+
+      setStatus('Importando prendas desde Excel…');
+
+      const itemsToInsert = rows.map((r) => {
+        const rawCat = String(r.Categoria || r.Categoría || r.categoria || r.categoría || '').trim();
+        const matchedCat = CATEGORIES.find((c) => c.toLowerCase() === rawCat.toLowerCase()) || 'General';
+
+        return {
+          business_id: state.membership.business_id,
+          trip_id: state.currentTripId,
+          name: String(r.Prenda || r.Nombre || r.prenda || r.nombre || 'Prenda Excel').trim(),
+          quantity: Math.max(0.01, number(r.Cantidad || r.cantidad || r.Cant || 1)),
+          price_brl: Math.max(0, number(r['Costo BRL'] || r['Costo (BRL)'] || r.costo || r.Costo || 0)),
+          profit_percentage: Math.max(0, number(r['Ganancia %'] || r.Ganancia || 100)),
+          category: matchedCat,
+          is_sold: false,
+          updated_by: state.user.id
+        };
+      });
+
+      const { data: inserted, error } = await state.client.from('garments').insert(itemsToInsert).select();
+      if (error) { setStatus(messageFrom(error), 'error'); return; }
+
+      state.garments.unshift(...inserted);
+      renderGarments();
+      setStatus(`¡Se importaron ${inserted.length} prendas con éxito!`, 'success');
+    } catch (err) {
+      setStatus('Error al procesar la planilla de Excel.', 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function inputFor(field, value, attributes = {}) {
+  const input = document.createElement('input');
+  input.dataset.field = field;
+  input.value = value;
+  input.setAttribute('aria-label', field);
+  Object.entries(attributes).forEach(([key, attrValue]) => input.setAttribute(key, attrValue));
+  return input;
 }
 
 function updateProfitInputLimits() {
@@ -321,9 +521,7 @@ function updateProfitInputLimits() {
 }
 
 function queueSettingsSave() {
-  calculate();
-  clearTimeout(state.settingsTimer);
-  state.settingsTimer = setTimeout(saveSettings, 550);
+  calculate(); clearTimeout(state.settingsTimer); state.settingsTimer = setTimeout(saveSettings, 550);
 }
 
 async function saveSettings() {
@@ -333,20 +531,15 @@ async function saveSettings() {
     viaticos: Math.max(0, number($('#viaticos').value)),
     flete: Math.max(0, number($('#flete').value))
   };
-
-  const settingValues = {
-    profit_mode: $('#profit-mode').value,
-    allocation_method: $('#allocation-method').value
-  };
+  const settingValues = { profit_mode: $('#profit-mode').value, allocation_method: $('#allocation-method').value };
 
   const [tripRes, setRes] = await Promise.all([
     state.client.from('trips').update(tripValues).eq('id', state.currentTripId),
     state.client.from('business_settings').update(settingValues).eq('business_id', state.membership.business_id)
   ]);
 
-  if (tripRes.error || setRes.error) {
-    setStatus(messageFrom(tripRes.error || setRes.error), 'error');
-  } else {
+  if (tripRes.error || setRes.error) setStatus(messageFrom(tripRes.error || setRes.error), 'error');
+  else {
     const idx = state.trips.findIndex((t) => t.id === state.currentTripId);
     if (idx > -1) state.trips[idx] = { ...state.trips[idx], ...tripValues };
     state.settings = { ...state.settings, ...settingValues };
@@ -355,15 +548,12 @@ async function saveSettings() {
 }
 
 function queueGarmentSave(id) {
-  calculate();
-  clearTimeout(state.garmentTimers.get(id));
+  calculate(); clearTimeout(state.garmentTimers.get(id));
   state.garmentTimers.set(id, setTimeout(() => saveGarment(id), 550));
 }
 
 async function saveGarment(id) {
-  const row = document.querySelector(`#garment-rows tr[data-id="${id}"]`);
-  if (!row) return;
-
+  const row = document.querySelector(`#garment-rows tr[data-id="${id}"]`); if (!row) return;
   const payload = {};
   row.querySelectorAll('[data-field]').forEach((input) => {
     payload[input.dataset.field] = input.dataset.field === 'name' ? input.value.trim() : number(input.value);
@@ -380,17 +570,10 @@ async function saveGarment(id) {
 
 async function addGarment() {
   const { data, error } = await state.client.from('garments').insert({
-    business_id: state.membership.business_id,
-    trip_id: state.currentTripId,
-    name: 'Nueva prenda',
-    quantity: 1,
-    price_brl: 0,
-    profit_percentage: 100,
-    updated_by: state.user.id
+    business_id: state.membership.business_id, trip_id: state.currentTripId, name: 'Nueva prenda', category: 'General', quantity: 1, price_brl: 0, profit_percentage: 100, is_sold: false, updated_by: state.user.id
   }).select().single();
 
   if (error) { setStatus(messageFrom(error), 'error'); return; }
-
   state.garments.unshift(data);
   renderGarments();
   document.querySelector(`#garment-rows tr[data-id="${data.id}"] [data-field="name"]`)?.focus();
@@ -401,30 +584,22 @@ async function deleteGarment(id) {
   if (!window.confirm('¿Eliminar esta prenda?')) return;
   const { error } = await state.client.from('garments').delete().eq('id', id);
   if (error) { setStatus(messageFrom(error), 'error'); return; }
-
   state.garments = state.garments.filter((item) => item.id !== id);
   renderGarments();
   setStatus('Prenda eliminada.', 'success');
 }
 
 async function createBusiness(event) {
-  event.preventDefault();
-  const name = $('#business-name').value.trim();
+  event.preventDefault(); const name = $('#business-name').value.trim();
   const { error } = await state.client.rpc('create_business', { business_name: name });
-  if (error) setStatus(messageFrom(error), 'error');
-  else await refreshWorkspace();
+  if (error) setStatus(messageFrom(error), 'error'); else await refreshWorkspace();
 }
 
 async function loadInvitations() {
   const { data, error } = await state.client.from('invitations').select('id, email, role, created_at').eq('business_id', state.membership.business_id);
   if (error) return;
-  const list = $('#invite-list');
-  list.replaceChildren();
-  data.forEach((invite) => {
-    const item = document.createElement('li');
-    item.textContent = `${invite.email} (${invite.role})`;
-    list.append(item);
-  });
+  const list = $('#invite-list'); list.replaceChildren();
+  data.forEach((invite) => { const item = document.createElement('li'); item.textContent = `${invite.email} (${invite.role})`; list.append(item); });
 }
 
 async function createInvitation(event) {
@@ -433,11 +608,7 @@ async function createInvitation(event) {
   const role = $('#invite-role').value;
   const { data, error } = await state.client.rpc('invite_member', { target_business_id: state.membership.business_id, target_email: email, target_role: role });
   if (error) setStatus(messageFrom(error), 'error');
-  else {
-    $('#invite-form').reset();
-    setStatus(data === 'joined' ? 'Usuario agregado al equipo.' : 'Invitación enviada.', 'success');
-    await loadInvitations();
-  }
+  else { $('#invite-form').reset(); setStatus(data === 'joined' ? 'Usuario agregado.' : 'Invitación enviada.', 'success'); await loadInvitations(); }
 }
 
 function exportCsv() {
@@ -446,20 +617,16 @@ function exportCsv() {
   const trip = state.trips.find((t) => t.id === state.currentTripId);
 
   const lines = [
-    'sep=;',
-    `JUSA BOUTIQUE - VIAJE: ${trip?.name || ''}`,
-    `Fecha;${formatDate(trip?.created_at)}`,
-    `Cotización;${$('#cotizacion').value}`,
-    `Pasajes;${$('#pasajes').value}`,
-    `Viáticos;${$('#viaticos').value}`,
-    `Flete;${$('#flete').value}`,
-    '',
-    'Prenda;Cantidad;Precio BRL;Compra PYG;Viaje PYG;Costo Real PYG;Ganancia %;Precio Venta PYG'
+    'sep=;', `JUSA BOUTIQUE - VIAJE: ${trip?.name || ''}`, `Fecha;${formatDate(trip?.created_at)}`,
+    `Cotización;${$('#cotizacion').value}`, `Pasajes;${$('#pasajes').value}`, `Viáticos;${$('#viaticos').value}`, `Flete;${$('#flete').value}`, '',
+    'Vendido;Prenda;Categoría;Cantidad;Precio BRL;Compra PYG;Viaje PYG;Costo Real PYG;Ganancia %;Precio Venta PYG'
   ];
 
   rows.forEach((row) => {
     lines.push([
+      row.querySelector('.sold-checkbox')?.checked ? 'SI' : 'NO',
       escape(row.querySelector('[data-field="name"]').value),
+      escape(row.querySelector('select')?.value || 'General'),
       row.querySelector('[data-field="quantity"]').value,
       row.querySelector('[data-field="price_brl"]').value,
       row.querySelector('[data-output="purchase"]').textContent.replace(/\D/g, ''),
@@ -478,19 +645,13 @@ function exportCsv() {
 }
 
 async function handleAuth(event) {
-  event.preventDefault();
-  authError();
-  const email = $('#email').value.trim();
-  const password = $('#password').value;
-
+  event.preventDefault(); authError();
+  const email = $('#email').value.trim(); const password = $('#password').value;
   let result;
   if (state.registerMode) {
     const fullName = $('#full-name').value.trim();
     result = await state.client.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
-  } else {
-    result = await state.client.auth.signInWithPassword({ email, password });
-  }
-
+  } else result = await state.client.auth.signInWithPassword({ email, password });
   if (result.error) authError(messageFrom(result.error));
 }
 
@@ -507,13 +668,61 @@ async function initialize() {
   $('#print-button').addEventListener('click', () => window.print());
   $('#invite-form').addEventListener('submit', createInvitation);
 
+  $('#search-input').addEventListener('input', renderGarments);
+  $('#filter-category').addEventListener('change', renderGarments);
+  $('#sort-select').addEventListener('change', renderGarments);
+  $('#inv-search-input').addEventListener('input', renderAllInventory);
+  $('#inv-filter-category').addEventListener('change', renderAllInventory);
+
+  $('#excel-file-input').addEventListener('change', handleExcelUpload);
+
   ['#cotizacion', '#pasajes', '#viaticos', '#flete', '#profit-mode', '#allocation-method'].forEach((selector) => {
     $(selector).addEventListener('input', queueSettingsSave);$(selector).addEventListener('change', queueSettingsSave);
   });
 
-  // Eventos de Navegación Lateral
+  document.addEventListener('click', () => hide('#trip-context-menu'));
+
+  $('#ctx-rename-trip').addEventListener('click', async () => {
+    if (!state.contextTripTarget) return;
+    const newName = prompt('Nuevo nombre del viaje:', state.contextTripTarget.name);
+    if (!newName) return;
+
+    const { error } = await state.client.from('trips').update({ name: newName.trim() }).eq('id', state.contextTripTarget.id);
+    if (error) { setStatus(messageFrom(error), 'error'); return; }
+
+    const idx = state.trips.findIndex((t) => t.id === state.contextTripTarget.id);
+    if (idx > -1) state.trips[idx].name = newName.trim();
+
+    renderSidebarNav();
+    if (state.currentTripId === state.contextTripTarget.id) renderSettings();
+    setStatus('Nombre de viaje actualizado.', 'success');
+  });
+
+  $('#ctx-delete-trip').addEventListener('click', async () => {
+    if (!state.contextTripTarget) return;
+    if (!window.confirm(`¿Seguro que querés eliminar "${state.contextTripTarget.name}"? Se borrarán sus prendas.`)) return;
+
+    const { error } = await state.client.from('trips').delete().eq('id', state.contextTripTarget.id);
+    if (error) { setStatus(messageFrom(error), 'error'); return; }
+
+    state.trips = state.trips.filter((t) => t.id !== state.contextTripTarget.id);
+    if (state.trips.length > 0) state.currentTripId = state.trips[0].id;
+
+    renderSidebarNav();
+    loadCurrentView();
+    setStatus('Viaje eliminado.', 'success');
+  });
+
+  // Navegación Pestañas
   $('#nav-inventory').addEventListener('click', () => {
-    state.isInventoryView = true;
+    state.currentView = 'inventory';
+    $('#sidebar').classList.remove('open');
+    renderSidebarNav();
+    loadCurrentView();
+  });
+
+  $('#nav-sold').addEventListener('click', () => {
+    state.currentView = 'sold';
     $('#sidebar').classList.remove('open');
     renderSidebarNav();
     loadCurrentView();
@@ -528,18 +737,13 @@ async function initialize() {
     if (!name) return;
 
     const { data, error } = await state.client.from('trips').insert({
-      business_id: state.membership.business_id,
-      name: name.trim(),
-      cotizacion: state.trips[0]?.cotizacion || 1420,
-      pasajes: 0,
-      viaticos: 0,
-      flete: 0
+      business_id: state.membership.business_id, name: name.trim(), cotizacion: state.trips[0]?.cotizacion || 1420, pasajes: 0, viaticos: 0, flete: 0
     }).select().single();
 
     if (error) { setStatus(messageFrom(error), 'error'); return; }
 
     state.trips.unshift(data);
-    state.isInventoryView = false;
+    state.currentView = 'calc';
     state.currentTripId = data.id;
 
     $('#sidebar').classList.remove('open');

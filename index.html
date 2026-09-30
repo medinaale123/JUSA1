@@ -2,24 +2,25 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="description" content="Calculadora compartida de costos para Jusa Boutique" />
     <title>Jusa Boutique · Calculadora</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@500;600&display=swap" rel="stylesheet" />
+    <!-- Librería para importar planillas Excel (.xlsx) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="page">
-      <!-- Advertencia de configuración -->
       <section id="setup-warning" class="notice hidden">
         Configurá <code>config.js</code> con la URL y la clave anon de Supabase antes de abrir la aplicación.
       </section>
 
-      <!-- Pantalla de Inicio de Sesión / Registro -->
+      <!-- Autenticación -->
       <section id="auth-view" class="auth-card hidden" aria-labelledby="auth-title">
-        <img src="https://i.postimg.cc/SKmqPJcd/Logo.png" alt="Jusa Boutique" class="logo" />
+        <img src="logo.png" alt="Jusa Boutique" class="logo" />
         <h1 id="auth-title">Calculadora compartida</h1>
         <p id="auth-subtitle">Ingresá con tu cuenta del equipo.</p>
         <form id="auth-form" novalidate>
@@ -35,9 +36,9 @@
         <button id="auth-toggle" class="link-button" type="button">Crear mi cuenta</button>
       </section>
 
-      <!-- Pantalla de Creación de Boutique (Onboarding) -->
+      <!-- Onboarding -->
       <section id="onboarding-view" class="auth-card hidden" aria-labelledby="onboarding-title">
-        <img src="https://i.postimg.cc/SKmqPJcd/Logo.png" alt="Jusa Boutique" class="logo" />
+        <img src="logo.png" alt="Jusa Boutique" class="logo" />
         <h1 id="onboarding-title">Preparar la boutique</h1>
         <p>Tu cuenta todavía no pertenece a un equipo. Si sos la encargada, creá el espacio compartido.</p>
         <form id="business-form">
@@ -50,9 +51,9 @@
         <button id="onboarding-logout" class="link-button" type="button">Cerrar sesión</button>
       </section>
 
-      <!-- Pantalla de Aceptación de Invitación -->
+      <!-- Invitación -->
       <section id="invite-accept-view" class="auth-card hidden" aria-labelledby="invite-accept-title">
-        <img src="https://i.postimg.cc/SKmqPJcd/Logo.png" alt="Jusa Boutique" class="logo" />
+        <img src="logo.png" alt="Jusa Boutique" class="logo" />
         <h1 id="invite-accept-title">Terminá tu invitación</h1>
         <form id="invite-accept-form" novalidate>
           <label for="invite-password">Nueva contraseña</label>
@@ -64,33 +65,34 @@
         </form>
       </section>
 
-      <!-- VISTA PRINCIPAL CON BARRA LATERAL (APP) -->
+      <!-- Aplicación Principal -->
       <section id="app-view" class="app-layout hidden">
         <!-- BARRA LATERAL -->
         <aside id="sidebar" class="sidebar">
           <div class="sidebar-header">
-            <img src="https://i.postimg.cc/SKmqPJcd/Logo.png" alt="Jusa Boutique" class="sidebar-logo" />
+            <img src="logo.png" alt="Jusa Boutique" class="sidebar-logo" />
             <div>
               <p class="eyebrow" id="business-label">Jusa Boutique</p>
-              <h2>Menú</h2>
+              <h2>Navegación</h2>
             </div>
-            <button id="close-sidebar-mobile" class="close-sidebar-btn" type="button" aria-label="Cerrar menú">×</button>
+            <button id="close-sidebar-mobile" class="close-sidebar-btn" type="button">×</button>
           </div>
 
           <nav class="sidebar-nav">
-            <!-- Pestaña 1: Inventario General -->
             <button id="nav-inventory" class="sidebar-item" type="button">
               <span class="icon">📦</span>
-              <span>Inventario Completo</span>
+              <span>Stock Disponible</span>
+            </button>
+
+            <button id="nav-sold" class="sidebar-item" type="button">
+              <span class="icon">🛍️</span>
+              <span>Prendas Vendidas</span>
             </button>
 
             <div class="sidebar-divider"></div>
-            <p class="sidebar-section-title">Viajes por fecha</p>
-            
-            <!-- Lista donde se cargarán los viajes dinámicamente -->
+            <p class="sidebar-section-title">Viajes por Fecha</p>
             <div id="sidebar-trips-list" class="trips-list"></div>
 
-            <!-- Botón para crear un nuevo viaje -->
             <button id="new-trip-btn" class="sidebar-item add-trip-btn" type="button">
               <span class="icon">+</span>
               <span>Nuevo Viaje</span>
@@ -108,7 +110,6 @@
 
         <!-- CONTENIDO PRINCIPAL -->
         <main class="main-content">
-          <!-- Botón de apertura para móviles -->
           <header class="mobile-header">
             <button id="toggle-sidebar" class="icon-button" type="button">☰ Menú</button>
             <h1 class="mobile-title">Jusa Boutique</h1>
@@ -116,7 +117,7 @@
 
           <p id="app-status" class="status" aria-live="polite"></p>
 
-          <!-- VISTA 1: CALCULADORA DEL VIAJE SELECCIONADO -->
+          <!-- Vista 1: Calculadora del Viaje -->
           <div id="view-calc">
             <div class="view-header">
               <h1 id="trip-title-display">Calculadora de Viaje</h1>
@@ -138,16 +139,10 @@
                 <h2>Configuración y resumen</h2>
                 <div class="field-grid compact">
                   <label>Cálculo de ganancia
-                    <select id="profit-mode">
-                      <option value="markup">Markup sobre costo</option>
-                      <option value="margin">Margen comercial sobre venta</option>
-                    </select>
+                    <select id="profit-mode"><option value="markup">Markup sobre costo</option><option value="margin">Margen comercial sobre venta</option></select>
                   </label>
                   <label>Distribución de gastos
-                    <select id="allocation-method">
-                      <option value="value">Proporcional al valor</option>
-                      <option value="quantity">Por cantidad de prendas</option>
-                    </select>
+                    <select id="allocation-method"><option value="value">Proporcional al valor</option><option value="quantity">Por cantidad de prendas</option></select>
                   </label>
                 </div>
                 <div class="summary">
@@ -159,16 +154,59 @@
               </section>
             </div>
 
+            <!-- BUSCADOR Y FILTROS -->
+            <section class="card toolbar-card">
+              <div class="toolbar-grid">
+                <div class="search-box">
+                  <span class="search-icon">🔍</span>
+                  <input id="search-input" type="text" placeholder="Buscar por nombre..." />
+                </div>
+                <div class="filter-box">
+                  <select id="filter-category">
+                    <option value="ALL">Todas las Categorías</option>
+                    <option value="General">General</option>
+                    <option value="Remeras">Remeras</option>
+                    <option value="Blusas">Blusas</option>
+                    <option value="Jeans">Jeans</option>
+                    <option value="Pantalones">Pantalones</option>
+                    <option value="Vestidos">Vestidos</option>
+                    <option value="Enterizos">Enterizos</option>
+                    <option value="Faldas / Polleras">Faldas / Polleras</option>
+                    <option value="Abrigos / Sacos">Abrigos / Sacos</option>
+                    <option value="Calzados">Calzados</option>
+                    <option value="Accesorios">Accesorios</option>
+                    <option value="Otros">Otros</option>
+                  </select>
+                </div>
+                <div class="filter-box">
+                  <select id="sort-select">
+                    <option value="DATE_DESC">Más recientes primero</option>
+                    <option value="PRICE_DESC">Precio venta: Mayor a Menor</option>
+                    <option value="PRICE_ASC">Precio venta: Menor a Mayor</option>
+                    <option value="NAME_ASC">Nombre: A-Z</option>
+                  </select>
+                </div>
+              </div>
+            </section>
+
             <section class="card inventory-card">
               <div class="section-heading">
-                <div><h2>Prendas agregadas al viaje</h2></div>
-                <button id="add-garment" class="button fit" type="button">+ Agregar prenda</button>
+                <div><h2>Prendas del viaje</h2></div>
+                <div class="btn-group">
+                  <label for="excel-file-input" class="button fit excel-btn">
+                    📂 Cargar Excel
+                    <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" style="display:none;" />
+                  </label>
+                  <button id="add-garment" class="button fit" type="button">+ Agregar prenda</button>
+                </div>
               </div>
               <div class="table-wrap">
                 <table>
                   <thead>
                     <tr>
+                      <th style="width:40px;">Vendido</th>
                       <th>Prenda</th>
+                      <th>Categoría</th>
                       <th>Cant.</th>
                       <th>Costo (BRL)</th>
                       <th>Compra (PYG)</th>
@@ -189,17 +227,46 @@
             </section>
           </div>
 
-          <!-- VISTA 2: INVENTARIO COMPLETO (SIMPLIFICADO) -->
+          <!-- Vista 2: Stock Disponible (Inventario Completo sin vendidas) -->
           <div id="view-inv" class="hidden">
             <div class="view-header">
-              <h1>Inventario Completo</h1>
+              <h1>Stock Disponible</h1>
+              <span id="stock-count-badge" class="trip-date-badge">0 prendas en stock</span>
             </div>
+
+            <section class="card toolbar-card" style="margin-bottom: 18px;">
+              <div class="toolbar-grid">
+                <div class="search-box">
+                  <span class="search-icon">🔍</span>
+                  <input id="inv-search-input" type="text" placeholder="Buscar en el stock..." />
+                </div>
+                <div class="filter-box">
+                  <select id="inv-filter-category">
+                    <option value="ALL">Todas las Categorías</option>
+                    <option value="General">General</option>
+                    <option value="Remeras">Remeras</option>
+                    <option value="Blusas">Blusas</option>
+                    <option value="Jeans">Jeans</option>
+                    <option value="Pantalones">Pantalones</option>
+                    <option value="Vestidos">Vestidos</option>
+                    <option value="Enterizos">Enterizos</option>
+                    <option value="Faldas / Polleras">Faldas / Polleras</option>
+                    <option value="Abrigos / Sacos">Abrigos / Sacos</option>
+                    <option value="Calzados">Calzados</option>
+                    <option value="Accesorios">Accesorios</option>
+                    <option value="Otros">Otros</option>
+                  </select>
+                </div>
+              </div>
+            </section>
+
             <section class="card inventory-card">
               <div class="table-wrap">
                 <table>
                   <thead>
                     <tr>
                       <th style="text-align:left;">Prenda</th>
+                      <th>Categoría</th>
                       <th>Precio de venta</th>
                       <th style="text-align:right;">Viaje de origen</th>
                     </tr>
@@ -210,7 +277,45 @@
             </section>
           </div>
 
-          <!-- SECCIÓN DE EQUIPO -->
+          <!-- Vista 3: Prendas Vendidas -->
+          <div id="view-sold" class="hidden">
+            <div class="view-header">
+              <h1>Prendas Vendidas</h1>
+              <span id="sold-count-badge" class="trip-date-badge">0 vendidas</span>
+            </div>
+
+            <div class="summary-card-single card" style="margin-bottom:18px;">
+              <div class="summary-stats">
+                <div>
+                  <span>Total Recaudado</span>
+                  <strong id="sold-total-amount">0 PYG</strong>
+                </div>
+                <div>
+                  <span>Ganancia Realizada</span>
+                  <strong id="sold-total-profit" style="color:#438a5e;">0 PYG</strong>
+                </div>
+              </div>
+            </div>
+
+            <section class="card inventory-card">
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="text-align:left;">Prenda</th>
+                      <th>Categoría</th>
+                      <th>Precio Cobrado</th>
+                      <th>Viaje de Origen</th>
+                      <th>Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sold-garments-rows"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <!-- Gestión de Equipo -->
           <section id="team-card" class="card hidden" style="margin-top:24px;">
             <h2>Equipo</h2>
             <p class="help">Invitá a una persona por correo para acceder al inventario compartido.</p>
@@ -218,10 +323,7 @@
               <label for="invite-email">Correo</label>
               <input id="invite-email" type="email" placeholder="compañera@correo.com" required />
               <label for="invite-role">Rol</label>
-              <select id="invite-role">
-                <option value="vendedora">Vendedora</option>
-                <option value="admin">Administradora</option>
-              </select>
+              <select id="invite-role"><option value="vendedora">Vendedora</option><option value="admin">Administradora</option></select>
               <button class="button fit" type="submit">Invitar</button>
             </form>
             <p id="invite-status" class="status" aria-live="polite"></p>
@@ -230,6 +332,12 @@
         </main>
       </section>
     </main>
+
+    <!-- Menú contextual para clic derecho -->
+    <div id="trip-context-menu" class="context-menu hidden">
+      <button id="ctx-rename-trip" type="button">✏️ Renombrar viaje</button>
+      <button id="ctx-delete-trip" type="button" class="danger-option">🗑️ Eliminar viaje</button>
+    </div>
 
     <script src="config.js"></script>
     <script type="module" src="app.js"></script>
