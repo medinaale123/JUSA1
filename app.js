@@ -3,18 +3,37 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 const config = window.JUSA_CONFIG || {};
 const ready = config.supabaseUrl && config.supabaseAnonKey && !config.supabaseUrl.includes('PEGAR_AQUI');
 const $ = (selector) => document.querySelector(selector);
-const inviteHash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-const inviteQuery = new URLSearchParams(window.location.search);
-const state = { client: null, user: null, membership: null, business: null, settings: null, garments: [], registerMode: false, inviteFlow: inviteHash.get('type') === 'invite' || inviteQuery.get('type') === 'invite', settingsTimer: null, garmentTimers: new Map() };
+
+const state = { 
+  client: null, 
+  user: null, 
+  membership: null, 
+  business: null, 
+  settings: null, 
+  trips: [], 
+  currentTripId: null, 
+  isInventoryView: false, 
+  garments: [], 
+  registerMode: false, 
+  settingsTimer: null, 
+  garmentTimers: new Map() 
+};
 
 const formatPYG = (value) => `${Math.round(Number(value) || 0).toLocaleString('es-PY')} PYG`;
+const formatDate = (isoString) => isoString ? new Date(isoString).toLocaleDateString('es-PY', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
-const setStatus = (text = '', kind = '') => { const el = $('#app-status'); el.textContent = text; el.className = `status ${kind}`; };
+
+const setStatus = (text = '', kind = '') => { 
+  const el = $('#app-status'); 
+  el.textContent = text; 
+  el.className = `status ${kind}`; 
+};
+
 const show = (selector) => $(selector).classList.remove('hidden');
 const hide = (selector) => $(selector).classList.add('hidden');
 
 function messageFrom(error, fallback = 'Ocurrió un error. Intentá nuevamente.') {
-  console.error(error);
+  console.error(error); 
   return error?.message || fallback;
 }
 
@@ -36,13 +55,13 @@ function setAuthMode(registerMode) {
   $('#auth-subtitle').textContent = registerMode ? 'Usá el mismo correo al que te invitó la administradora.' : 'Ingresá con tu cuenta del equipo.';
   $('#auth-submit').textContent = registerMode ? 'Crear cuenta' : 'Ingresar';
   $('#auth-toggle').textContent = registerMode ? 'Ya tengo una cuenta' : 'Crear mi cuenta';
-  $('#password').autocomplete = registerMode ? 'new-password' : 'current-password';
   authError();
 }
 
 async function refreshWorkspace() {
   if (!state.user) return;
-  setStatus('Cargando inventario compartido…');
+  setStatus('Cargando datos…');
+
   const { data: membership, error: membershipError } = await state.client
     .from('memberships')
     .select('business_id, role, businesses(name)')
@@ -50,87 +69,187 @@ async function refreshWorkspace() {
     .limit(1)
     .maybeSingle();
 
-  if (membershipError) {
-    setStatus(messageFrom(membershipError), 'error');
-    return;
-  }
-  if (!membership) {
-    showOnly('#onboarding-view');
-    return;
-  }
+  if (membershipError) { setStatus(messageFrom(membershipError), 'error'); return; }
+  if (!membership) { showOnly('#onboarding-view'); return; }
 
   state.membership = membership;
   state.business = Array.isArray(membership.businesses) ? membership.businesses[0] : membership.businesses;
-  const [settingsResult, garmentsResult] = await Promise.all([
+
+  const [settingsRes, tripsRes, garmentsRes] = await Promise.all([
     state.client.from('business_settings').select('*').eq('business_id', membership.business_id).single(),
-    state.client.from('garments').select('*').eq('business_id', membership.business_id).order('created_at')
+    state.client.from('trips').select('*').eq('business_id', membership.business_id).order('created_at', { ascending: false }),
+    state.client.from('garments').select('*').eq('business_id', membership.business_id).order('created_at', { ascending: false })
   ]);
-  if (settingsResult.error || garmentsResult.error) {
-    setStatus(messageFrom(settingsResult.error || garmentsResult.error), 'error');
-    return;
+
+  if (settingsRes.error) { setStatus(messageFrom(settingsRes.error), 'error'); return; }
+
+  state.settings = settingsRes.data;
+  state.trips = tripsRes.data || [];
+  state.garments = garmentsRes.data || [];
+
+  if (state.trips.length > 0 && !state.currentTripId) {
+    state.currentTripId = state.trips[0].id;
   }
-  state.settings = settingsResult.data;
-  state.garments = garmentsResult.data;
+
   showOnly('#app-view');
   $('#business-label').textContent = state.business?.name || 'Jusa Boutique';
   $('#user-label').textContent = state.user.email;
   $('#role-label').textContent = membership.role === 'admin' ? 'Administradora' : 'Vendedora';
   $('#team-card').classList.toggle('hidden', membership.role !== 'admin');
-  renderSettings();
-  renderGarments();
+
+  renderSidebarNav();
+  loadCurrentView();
+
   if (membership.role === 'admin') await loadInvitations();
   setStatus('Todo está sincronizado.', 'success');
 }
 
+function renderSidebarNav() {
+  const container = $('#sidebar-trips-list');
+  container.replaceChildren();
+
+  // Estado activo en "Inventario Completo"
+  if (state.isInventoryView) {
+    $('#nav-inventory').classList.add('active');
+  } else {
+    $('#nav-inventory').classList.remove('active');
+  }
+
+  // Renderizar cada viaje con su fecha en la barra lateral
+  state.trips.forEach((trip) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `sidebar-item trip-item-btn ${!state.isInventoryView && trip.id === state.currentTripId ? 'active' : ''}`;
+
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = `✈️ ${trip.name}`;
+
+    const dateSpan = document.createElement('span');
+    dateSpan.className = 'trip-item-date';
+    dateSpan.textContent = formatDate(trip.created_at);
+
+    btn.append(titleSpan, dateSpan);
+    btn.addEventListener('click', () => {
+      state.isInventoryView = false;
+      state.currentTripId = trip.id;
+      $('#sidebar').classList.remove('open');
+      renderSidebarNav();
+      loadCurrentView();
+    });
+
+    container.append(btn);
+  });
+}
+
+function loadCurrentView() {
+  if (state.isInventoryView) {
+    hide('#view-calc');
+    show('#view-inv');
+    renderAllInventory();
+  } else {
+    hide('#view-inv');
+    show('#view-calc');
+    renderSettings();
+    renderGarments();
+  }
+}
+
 function renderSettings() {
-  const s = state.settings;
-  $('#cotizacion').value = s.cotizacion;
-  $('#pasajes').value = s.pasajes;
-  $('#viaticos').value = s.viaticos;
-  $('#flete').value = s.flete;
-  $('#profit-mode').value = s.profit_mode;
-  $('#allocation-method').value = s.allocation_method;
+  const trip = state.trips.find((t) => t.id === state.currentTripId);
+  if (!trip) return;
+
+  $('#trip-title-display').textContent = trip.name;
+  $('#trip-date-display').textContent = `Creado: ${formatDate(trip.created_at)}`;
+
+  $('#cotizacion').value = trip.cotizacion;
+  $('#pasajes').value = trip.pasajes;
+  $('#viaticos').value = trip.viaticos;
+  $('#flete').value = trip.flete;
+  $('#profit-mode').value = state.settings.profit_mode;
+  $('#allocation-method').value = state.settings.allocation_method;
+
   updateProfitInputLimits();
   calculate();
 }
 
 function calculate() {
-  if (!state.settings) return;
+  const trip = state.trips.find((t) => t.id === state.currentTripId);
+  if (!trip || !state.settings) return;
+
   const rate = Math.max(0, number($('#cotizacion').value));
   const travel = Math.max(0, number($('#pasajes').value)) + Math.max(0, number($('#viaticos').value)) + Math.max(0, number($('#flete').value));
-  const garmentData = [...document.querySelectorAll('#garment-rows tr')].map((row) => ({
+  
+  const garmentRows = [...document.querySelectorAll('#garment-rows tr')].map((row) => ({
     row,
     quantity: Math.max(0, number(row.querySelector('[data-field="quantity"]').value)),
     price: Math.max(0, number(row.querySelector('[data-field="price_brl"]').value)),
     profit: Math.max(0, number(row.querySelector('[data-field="profit_percentage"]').value))
   }));
-  const totalUnits = garmentData.reduce((sum, item) => sum + item.quantity, 0);
-  const totalPurchase = garmentData.reduce((sum, item) => sum + item.quantity * item.price * rate, 0);
+
+  const totalUnits = garmentRows.reduce((sum, item) => sum + item.quantity, 0);
+  const totalPurchase = garmentRows.reduce((sum, item) => sum + item.quantity * item.price * rate, 0);
   const useMargin = $('#profit-mode').value === 'margin';
   const useValue = $('#allocation-method').value === 'value';
   let totalProfit = 0;
 
-  garmentData.forEach((item) => {
+  garmentRows.forEach((item) => {
     const purchase = item.price * rate;
-    const travelPerItem = useValue && totalPurchase > 0
-      ? purchase * (travel / totalPurchase)
-      : totalUnits > 0 ? travel / totalUnits : 0;
+    const travelPerItem = useValue && totalPurchase > 0 ? purchase * (travel / totalPurchase) : totalUnits > 0 ? travel / totalUnits : 0;
     const realCost = purchase + travelPerItem;
     const safeProfit = useMargin ? Math.min(item.profit, 99.99) : item.profit;
     const sale = useMargin ? realCost / (1 - safeProfit / 100) : realCost * (1 + safeProfit / 100);
+
     totalProfit += (sale - realCost) * item.quantity;
     item.row.querySelector('[data-output="purchase"]').textContent = formatPYG(purchase);
     item.row.querySelector('[data-output="travel"]').textContent = formatPYG(travelPerItem);
     item.row.querySelector('[data-output="real"]').textContent = formatPYG(realCost);
     item.row.querySelector('[data-output="sale"]').textContent = formatPYG(sale);
   });
+
   $('#total-expenses').textContent = formatPYG(travel);
   $('#total-units').textContent = `${totalUnits.toLocaleString('es-PY')} un.`;
   $('#total-purchase').textContent = formatPYG(totalPurchase);
   $('#total-profit').textContent = formatPYG(totalProfit);
 }
 
-function inputFor(field, value, attributes = '') {
+function renderAllInventory() {
+  const body = $('#all-garments-rows');
+  body.replaceChildren();
+
+  const useMargin = state.settings.profit_mode === 'margin';
+  const useValue = state.settings.allocation_method === 'value';
+
+  const tripTotals = {};
+  state.trips.forEach((trip) => {
+    const tripGarments = state.garments.filter((g) => g.trip_id === trip.id);
+    const travel = Number(trip.pasajes) + Number(trip.viaticos) + Number(trip.flete);
+    const totalUnits = tripGarments.reduce((sum, item) => sum + Number(item.quantity), 0);
+    const totalPurchase = tripGarments.reduce((sum, item) => sum + Number(item.quantity) * Number(item.price_brl) * Number(trip.cotizacion), 0);
+    tripTotals[trip.id] = { travel, totalUnits, totalPurchase, rate: Number(trip.cotizacion) };
+  });
+
+  state.garments.forEach((garment) => {
+    const trip = state.trips.find((t) => t.id === garment.trip_id);
+    if (!trip) return;
+
+    const totals = tripTotals[trip.id];
+    const purchase = garment.price_brl * totals.rate;
+    const travelPerItem = useValue && totals.totalPurchase > 0 ? purchase * (totals.travel / totals.totalPurchase) : totals.totalUnits > 0 ? totals.travel / totals.totalUnits : 0;
+    const realCost = purchase + travelPerItem;
+    const safeProfit = useMargin ? Math.min(garment.profit_percentage, 99.99) : garment.profit_percentage;
+    const sale = useMargin ? realCost / (1 - safeProfit / 100) : realCost * (1 + safeProfit / 100);
+
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td style="text-align:left; font-weight:600;">${garment.name}</td>
+      <td class="money" style="font-size:14px;">${formatPYG(sale)}</td>
+      <td style="text-align:right; color:var(--muted); font-size:12px;">${trip.name} (${formatDate(trip.created_at)})</td>
+    `;
+    body.append(row);
+  });
+}
+
+function inputFor(field, value, attributes = {}) {
   const input = document.createElement('input');
   input.dataset.field = field;
   input.value = value;
@@ -142,23 +261,56 @@ function inputFor(field, value, attributes = '') {
 function renderGarments() {
   const body = $('#garment-rows');
   body.replaceChildren();
-  state.garments.forEach((garment) => {
+  const currentGarments = state.garments.filter((g) => g.trip_id === state.currentTripId);
+
+  currentGarments.forEach((garment) => {
     const row = document.createElement('tr');
     row.dataset.id = garment.id;
-    const cells = [document.createElement('td'), document.createElement('td'), document.createElement('td')];
-    cells[0].append(inputFor('name', garment.name, { type: 'text', maxlength: '160' }));
-    cells[1].append(inputFor('quantity', garment.quantity, { type: 'number', min: '0.01', step: '0.01' }));
-    cells[2].append(inputFor('price_brl', garment.price_brl, { type: 'number', min: '0', step: '0.01' }));
-    cells.forEach((cell) => row.append(cell));
-    ['purchase', 'travel', 'real'].forEach((output) => { const cell = document.createElement('td'); const span = document.createElement('span'); span.dataset.output = output; span.className = 'money'; cell.append(span); row.append(cell); });
+
+    const nameCell = document.createElement('td');
+    nameCell.append(inputFor('name', garment.name, { type: 'text', maxlength: '160' }));
+
+    const qtyCell = document.createElement('td');
+    qtyCell.append(inputFor('quantity', garment.quantity, { type: 'number', min: '0.01', step: '0.01' }));
+
+    const priceCell = document.createElement('td');
+    priceCell.append(inputFor('price_brl', garment.price_brl, { type: 'number', min: '0', step: '0.01' }));
+
+    row.append(nameCell, qtyCell, priceCell);
+
+    ['purchase', 'travel', 'real'].forEach((output) => {
+      const cell = document.createElement('td');
+      const span = document.createElement('span');
+      span.dataset.output = output;
+      span.className = 'money';
+      cell.append(span);
+      row.append(cell);
+    });
+
     const profitCell = document.createElement('td');
     profitCell.append(inputFor('profit_percentage', garment.profit_percentage, { type: 'number', min: '0', step: '0.01' }));
     row.append(profitCell);
-    const saleCell = document.createElement('td'); const sale = document.createElement('span'); sale.dataset.output = 'sale'; sale.className = 'money'; saleCell.append(sale); row.append(saleCell);
-    const deleteCell = document.createElement('td'); const del = document.createElement('button'); del.type = 'button'; del.className = 'delete'; del.textContent = '×'; del.ariaLabel = `Eliminar ${garment.name}`; del.addEventListener('click', () => deleteGarment(garment.id)); deleteCell.append(del); row.append(deleteCell);
+
+    const saleCell = document.createElement('td');
+    const saleSpan = document.createElement('span');
+    saleSpan.dataset.output = 'sale';
+    saleSpan.className = 'money';
+    saleCell.append(saleSpan);
+    row.append(saleCell);
+
+    const deleteCell = document.createElement('td');
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'delete';
+    delBtn.textContent = '×';
+    delBtn.addEventListener('click', () => deleteGarment(garment.id));
+    deleteCell.append(delBtn);
+    row.append(deleteCell);
+
     row.querySelectorAll('input').forEach((input) => input.addEventListener('input', () => queueGarmentSave(garment.id)));
     body.append(row);
   });
+
   updateProfitInputLimits();
   calculate();
 }
@@ -168,17 +320,6 @@ function updateProfitInputLimits() {
   document.querySelectorAll('[data-field="profit_percentage"]').forEach((input) => input.max = max);
 }
 
-function currentSettings() {
-  return {
-    cotizacion: Math.max(0, number($('#cotizacion').value)),
-    pasajes: Math.max(0, number($('#pasajes').value)),
-    viaticos: Math.max(0, number($('#viaticos').value)),
-    flete: Math.max(0, number($('#flete').value)),
-    profit_mode: $('#profit-mode').value,
-    allocation_method: $('#allocation-method').value
-  };
-}
-
 function queueSettingsSave() {
   calculate();
   clearTimeout(state.settingsTimer);
@@ -186,10 +327,31 @@ function queueSettingsSave() {
 }
 
 async function saveSettings() {
-  const values = currentSettings();
-  const { error } = await state.client.from('business_settings').update(values).eq('business_id', state.membership.business_id);
-  if (error) setStatus(messageFrom(error), 'error');
-  else { state.settings = { ...state.settings, ...values }; setStatus('Cambios guardados.', 'success'); }
+  const tripValues = {
+    cotizacion: Math.max(0, number($('#cotizacion').value)),
+    pasajes: Math.max(0, number($('#pasajes').value)),
+    viaticos: Math.max(0, number($('#viaticos').value)),
+    flete: Math.max(0, number($('#flete').value))
+  };
+
+  const settingValues = {
+    profit_mode: $('#profit-mode').value,
+    allocation_method: $('#allocation-method').value
+  };
+
+  const [tripRes, setRes] = await Promise.all([
+    state.client.from('trips').update(tripValues).eq('id', state.currentTripId),
+    state.client.from('business_settings').update(settingValues).eq('business_id', state.membership.business_id)
+  ]);
+
+  if (tripRes.error || setRes.error) {
+    setStatus(messageFrom(tripRes.error || setRes.error), 'error');
+  } else {
+    const idx = state.trips.findIndex((t) => t.id === state.currentTripId);
+    if (idx > -1) state.trips[idx] = { ...state.trips[idx], ...tripValues };
+    state.settings = { ...state.settings, ...settingValues };
+    setStatus('Cambios guardados.', 'success');
+  }
 }
 
 function queueGarmentSave(id) {
@@ -201,33 +363,45 @@ function queueGarmentSave(id) {
 async function saveGarment(id) {
   const row = document.querySelector(`#garment-rows tr[data-id="${id}"]`);
   if (!row) return;
+
   const payload = {};
-  row.querySelectorAll('[data-field]').forEach((input) => { payload[input.dataset.field] = input.dataset.field === 'name' ? input.value.trim() : number(input.value); });
-  if (!payload.name) { setStatus('Cada prenda necesita un nombre.', 'error'); return; }
-  if (payload.quantity <= 0 || payload.price_brl < 0 || payload.profit_percentage < 0 || ($('#profit-mode').value === 'margin' && payload.profit_percentage >= 100)) {
-    setStatus('Revisá cantidad, costos y porcentaje de ganancia.', 'error'); return;
-  }
+  row.querySelectorAll('[data-field]').forEach((input) => {
+    payload[input.dataset.field] = input.dataset.field === 'name' ? input.value.trim() : number(input.value);
+  });
+
+  if (!payload.name) { setStatus('Ingresá un nombre para la prenda.', 'error'); return; }
+
   const { data, error } = await state.client.from('garments').update(payload).eq('id', id).select().single();
   if (error) { setStatus(messageFrom(error), 'error'); return; }
+
   state.garments = state.garments.map((item) => item.id === id ? data : item);
-  setStatus('Prenda actualizada.', 'success');
+  setStatus('Prenda guardada.', 'success');
 }
 
 async function addGarment() {
   const { data, error } = await state.client.from('garments').insert({
-    business_id: state.membership.business_id, name: 'Nueva prenda', quantity: 1, price_brl: 0, profit_percentage: 100, updated_by: state.user.id
+    business_id: state.membership.business_id,
+    trip_id: state.currentTripId,
+    name: 'Nueva prenda',
+    quantity: 1,
+    price_brl: 0,
+    profit_percentage: 100,
+    updated_by: state.user.id
   }).select().single();
+
   if (error) { setStatus(messageFrom(error), 'error'); return; }
-  state.garments.push(data);
+
+  state.garments.unshift(data);
   renderGarments();
   document.querySelector(`#garment-rows tr[data-id="${data.id}"] [data-field="name"]`)?.focus();
   setStatus('Prenda agregada.', 'success');
 }
 
 async function deleteGarment(id) {
-  if (!window.confirm('¿Eliminar esta prenda del inventario compartido?')) return;
+  if (!window.confirm('¿Eliminar esta prenda?')) return;
   const { error } = await state.client.from('garments').delete().eq('id', id);
   if (error) { setStatus(messageFrom(error), 'error'); return; }
+
   state.garments = state.garments.filter((item) => item.id !== id);
   renderGarments();
   setStatus('Prenda eliminada.', 'success');
@@ -236,117 +410,153 @@ async function deleteGarment(id) {
 async function createBusiness(event) {
   event.preventDefault();
   const name = $('#business-name').value.trim();
-  const errorEl = $('#business-error');
-  errorEl.classList.add('hidden');
   const { error } = await state.client.rpc('create_business', { business_name: name });
-  if (error) { errorEl.textContent = messageFrom(error); errorEl.classList.remove('hidden'); return; }
-  await refreshWorkspace();
+  if (error) setStatus(messageFrom(error), 'error');
+  else await refreshWorkspace();
 }
 
 async function loadInvitations() {
-  const { data, error } = await state.client.from('invitations').select('id, email, role, created_at').eq('business_id', state.membership.business_id).order('created_at');
-  if (error) { $('#invite-status').textContent = messageFrom(error); return; }
-  const list = $('#invite-list'); list.replaceChildren();
-  data.forEach((invite) => { const item = document.createElement('li'); item.textContent = `${invite.email} · ${invite.role === 'admin' ? 'Administradora' : 'Vendedora'} (pendiente)`; list.append(item); });
+  const { data, error } = await state.client.from('invitations').select('id, email, role, created_at').eq('business_id', state.membership.business_id);
+  if (error) return;
+  const list = $('#invite-list');
+  list.replaceChildren();
+  data.forEach((invite) => {
+    const item = document.createElement('li');
+    item.textContent = `${invite.email} (${invite.role})`;
+    list.append(item);
+  });
 }
 
 async function createInvitation(event) {
   event.preventDefault();
   const email = $('#invite-email').value.trim().toLowerCase();
   const role = $('#invite-role').value;
-  const status = $('#invite-status'); status.className = 'status'; status.textContent = '';
   const { data, error } = await state.client.rpc('invite_member', { target_business_id: state.membership.business_id, target_email: email, target_role: role });
-  if (error) { status.textContent = messageFrom(error); status.classList.add('error'); return; }
-  $('#invite-form').reset();
-  status.textContent = data === 'joined'
-    ? `${email} ya tenía una cuenta y ahora tiene acceso al inventario.`
-    : `Invitación preparada para ${email}. Avisale que cree su cuenta con ese correo.`;
-  status.classList.add('success');
-  await loadInvitations();
+  if (error) setStatus(messageFrom(error), 'error');
+  else {
+    $('#invite-form').reset();
+    setStatus(data === 'joined' ? 'Usuario agregado al equipo.' : 'Invitación enviada.', 'success');
+    await loadInvitations();
+  }
 }
 
 function exportCsv() {
   const rows = [...document.querySelectorAll('#garment-rows tr')];
-  const escape = (value) => {
-    let text = String(value ?? '');
-    if (/^[=+\-@]/.test(text)) text = `'${text}`;
-    return `"${text.replace(/"/g, '""')}"`;
-  };
+  const escape = (val) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+  const trip = state.trips.find((t) => t.id === state.currentTripId);
+
   const lines = [
-    'sep=;', 'JUSA BOUTIQUE - REPORTE DE CALCULADORA',
-    `Fecha;${new Date().toLocaleDateString('es-PY')}`,
-    `Cotización BRL/PYG;${$('#cotizacion').value}`, `Pasajes;${$('#pasajes').value}`, `Viáticos;${$('#viaticos').value}`, `Fletes;${$('#flete').value}`, '',
-    'Prenda;Cantidad;Precio BRL;Compra PYG;Viaje PYG;Costo Real;Ganancia %;Precio Venta'
+    'sep=;',
+    `JUSA BOUTIQUE - VIAJE: ${trip?.name || ''}`,
+    `Fecha;${formatDate(trip?.created_at)}`,
+    `Cotización;${$('#cotizacion').value}`,
+    `Pasajes;${$('#pasajes').value}`,
+    `Viáticos;${$('#viaticos').value}`,
+    `Flete;${$('#flete').value}`,
+    '',
+    'Prenda;Cantidad;Precio BRL;Compra PYG;Viaje PYG;Costo Real PYG;Ganancia %;Precio Venta PYG'
   ];
-  rows.forEach((row) => lines.push([
-    escape(row.querySelector('[data-field="name"]').value), row.querySelector('[data-field="quantity"]').value, row.querySelector('[data-field="price_brl"]').value,
-    row.querySelector('[data-output="purchase"]').textContent.replace(/\D/g, ''), row.querySelector('[data-output="travel"]').textContent.replace(/\D/g, ''), row.querySelector('[data-output="real"]').textContent.replace(/\D/g, ''), row.querySelector('[data-field="profit_percentage"]').value, row.querySelector('[data-output="sale"]').textContent.replace(/\D/g, '')
-  ].join(';')));
-  const url = URL.createObjectURL(new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' }));
-  const link = document.createElement('a'); link.href = url; link.download = `JusaBoutique_${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(url);
+
+  rows.forEach((row) => {
+    lines.push([
+      escape(row.querySelector('[data-field="name"]').value),
+      row.querySelector('[data-field="quantity"]').value,
+      row.querySelector('[data-field="price_brl"]').value,
+      row.querySelector('[data-output="purchase"]').textContent.replace(/\D/g, ''),
+      row.querySelector('[data-output="travel"]').textContent.replace(/\D/g, ''),
+      row.querySelector('[data-output="real"]').textContent.replace(/\D/g, ''),
+      row.querySelector('[data-field="profit_percentage"]').value,
+      row.querySelector('[data-output="sale"]').textContent.replace(/\D/g, '')
+    ].join(';'));
+  });
+
+  const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `Jusa_${trip?.name}_${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
 }
 
 async function handleAuth(event) {
-  event.preventDefault(); authError();
-  const email = $('#email').value.trim(); const password = $('#password').value;
+  event.preventDefault();
+  authError();
+  const email = $('#email').value.trim();
+  const password = $('#password').value;
+
   let result;
   if (state.registerMode) {
     const fullName = $('#full-name').value.trim();
-    // Supabase solo admite URLs http(s) aprobadas. Al abrir index.html con
-    // doble clic, location.origin es "null" y no debe enviarse como redirect.
-    const isWebUrl = ['http:', 'https:'].includes(window.location.protocol);
-    const options = { data: { full_name: fullName } };
-    if (isWebUrl) options.emailRedirectTo = window.location.origin;
-    result = await state.client.auth.signUp({ email, password, options });
-    if (!result.error && !result.data.session) authError('Revisá tu correo para confirmar la cuenta antes de ingresar.');
-  } else result = await state.client.auth.signInWithPassword({ email, password });
-  if (result.error) authError(messageFrom(result.error));
-}
+    result = await state.client.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
+  } else {
+    result = await state.client.auth.signInWithPassword({ email, password });
+  }
 
-async function completeInvitation(event) {
-  event.preventDefault();
-  const password = $('#invite-password').value;
-  const confirmation = $('#invite-password-confirm').value;
-  const errorEl = $('#invite-accept-error');
-  errorEl.classList.add('hidden');
-  if (password.length < 8) { errorEl.textContent = 'La contraseña debe tener al menos 8 caracteres.'; errorEl.classList.remove('hidden'); return; }
-  if (password !== confirmation) { errorEl.textContent = 'Las contraseñas no coinciden.'; errorEl.classList.remove('hidden'); return; }
-  const { error } = await state.client.auth.updateUser({ password });
-  if (error) { errorEl.textContent = messageFrom(error); errorEl.classList.remove('hidden'); return; }
-  state.inviteFlow = false;
-  history.replaceState({}, document.title, window.location.pathname);
-  await refreshWorkspace();
+  if (result.error) authError(messageFrom(result.error));
 }
 
 async function initialize() {
   if (!ready) { show('#setup-warning'); return; }
   state.client = createClient(config.supabaseUrl, config.supabaseAnonKey);
+
   $('#auth-form').addEventListener('submit', handleAuth);
   $('#auth-toggle').addEventListener('click', () => setAuthMode(!state.registerMode));
   $('#business-form').addEventListener('submit', createBusiness);
-  $('#invite-accept-form').addEventListener('submit', completeInvitation);
-  $('#onboarding-password').addEventListener('click', () => showOnly('#invite-accept-view'));
-  $('#onboarding-logout').addEventListener('click', () => state.client.auth.signOut());
   $('#logout-button').addEventListener('click', () => state.client.auth.signOut());
   $('#add-garment').addEventListener('click', addGarment);
   $('#export-button').addEventListener('click', exportCsv);
   $('#print-button').addEventListener('click', () => window.print());
   $('#invite-form').addEventListener('submit', createInvitation);
+
   ['#cotizacion', '#pasajes', '#viaticos', '#flete', '#profit-mode', '#allocation-method'].forEach((selector) => {
-    $(selector).addEventListener('input', queueSettingsSave);
-    $(selector).addEventListener('change', queueSettingsSave);
+    $(selector).addEventListener('input', queueSettingsSave);$(selector).addEventListener('change', queueSettingsSave);
   });
-  $('#profit-mode').addEventListener('change', updateProfitInputLimits);
+
+  // Eventos de Navegación Lateral
+  $('#nav-inventory').addEventListener('click', () => {
+    state.isInventoryView = true;
+    $('#sidebar').classList.remove('open');
+    renderSidebarNav();
+    loadCurrentView();
+  });
+
+  $('#toggle-sidebar').addEventListener('click', () => $('#sidebar').classList.add('open'));
+  $('#close-sidebar-mobile').addEventListener('click', () => $('#sidebar').classList.remove('open'));
+
+  $('#new-trip-btn').addEventListener('click', async () => {
+    const defaultName = `Viaje ${new Date().toLocaleDateString('es-PY')}`;
+    const name = prompt('Nombre del nuevo viaje:', defaultName);
+    if (!name) return;
+
+    const { data, error } = await state.client.from('trips').insert({
+      business_id: state.membership.business_id,
+      name: name.trim(),
+      cotizacion: state.trips[0]?.cotizacion || 1420,
+      pasajes: 0,
+      viaticos: 0,
+      flete: 0
+    }).select().single();
+
+    if (error) { setStatus(messageFrom(error), 'error'); return; }
+
+    state.trips.unshift(data);
+    state.isInventoryView = false;
+    state.currentTripId = data.id;
+
+    $('#sidebar').classList.remove('open');
+    renderSidebarNav();
+    loadCurrentView();
+    setStatus('Viaje creado.', 'success');
+  });
+
   state.client.auth.onAuthStateChange((_event, session) => {
     state.user = session?.user || null;
-    if (state.user && state.inviteFlow) showOnly('#invite-accept-view');
-    else if (state.user) refreshWorkspace();
+    if (state.user) refreshWorkspace();
     else showOnly('#auth-view');
   });
+
   const { data: { session } } = await state.client.auth.getSession();
   state.user = session?.user || null;
-  if (state.user && state.inviteFlow) showOnly('#invite-accept-view');
-  else if (state.user) await refreshWorkspace();
+  if (state.user) await refreshWorkspace();
   else { showOnly('#auth-view'); setAuthMode(false); }
 }
 

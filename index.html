@@ -12,10 +12,12 @@
   </head>
   <body>
     <main class="page">
+      <!-- Advertencia de configuración -->
       <section id="setup-warning" class="notice hidden">
         Configurá <code>config.js</code> con la URL y la clave anon de Supabase antes de abrir la aplicación.
       </section>
 
+      <!-- Pantalla de Inicio de Sesión / Registro -->
       <section id="auth-view" class="auth-card hidden" aria-labelledby="auth-title">
         <img src="https://i.postimg.cc/SKmqPJcd/Logo.png" alt="Jusa Boutique" class="logo" />
         <h1 id="auth-title">Calculadora compartida</h1>
@@ -33,6 +35,7 @@
         <button id="auth-toggle" class="link-button" type="button">Crear mi cuenta</button>
       </section>
 
+      <!-- Pantalla de Creación de Boutique (Onboarding) -->
       <section id="onboarding-view" class="auth-card hidden" aria-labelledby="onboarding-title">
         <img src="https://i.postimg.cc/SKmqPJcd/Logo.png" alt="Jusa Boutique" class="logo" />
         <h1 id="onboarding-title">Preparar la boutique</h1>
@@ -43,105 +46,191 @@
           <p id="business-error" class="form-error hidden" role="alert"></p>
           <button class="button" type="submit">Crear boutique compartida</button>
         </form>
-        <p class="help">¿Llegaste desde una invitación? Primero definí tu contraseña y pedile a una administradora que agregue tu correo desde Equipo.</p>
         <button id="onboarding-password" class="link-button" type="button">Definir mi contraseña</button>
         <button id="onboarding-logout" class="link-button" type="button">Cerrar sesión</button>
       </section>
 
+      <!-- Pantalla de Aceptación de Invitación -->
       <section id="invite-accept-view" class="auth-card hidden" aria-labelledby="invite-accept-title">
         <img src="https://i.postimg.cc/SKmqPJcd/Logo.png" alt="Jusa Boutique" class="logo" />
         <h1 id="invite-accept-title">Terminá tu invitación</h1>
-        <p>Elegí una contraseña para acceder a Jusa Boutique.</p>
         <form id="invite-accept-form" novalidate>
           <label for="invite-password">Nueva contraseña</label>
-          <input id="invite-password" type="password" autocomplete="new-password" minlength="8" placeholder="Mínimo 8 caracteres" required />
+          <input id="invite-password" type="password" minlength="8" placeholder="Mínimo 8 caracteres" required />
           <label for="invite-password-confirm">Repetí la contraseña</label>
-          <input id="invite-password-confirm" type="password" autocomplete="new-password" minlength="8" placeholder="Repetí la contraseña" required />
+          <input id="invite-password-confirm" type="password" minlength="8" placeholder="Repetí la contraseña" required />
           <p id="invite-accept-error" class="form-error hidden" role="alert"></p>
           <button class="button" type="submit">Guardar contraseña y entrar</button>
         </form>
       </section>
 
-      <section id="app-view" class="app hidden">
-        <header class="app-header">
-          <div class="brand">
-            <img src="https://i.postimg.cc/SKmqPJcd/Logo.png" alt="Jusa Boutique" class="brand-logo" />
+      <!-- VISTA PRINCIPAL CON BARRA LATERAL (APP) -->
+      <section id="app-view" class="app-layout hidden">
+        <!-- BARRA LATERAL -->
+        <aside id="sidebar" class="sidebar">
+          <div class="sidebar-header">
+            <img src="https://i.postimg.cc/SKmqPJcd/Logo.png" alt="Jusa Boutique" class="sidebar-logo" />
             <div>
               <p class="eyebrow" id="business-label">Jusa Boutique</p>
-              <h1>Calculadora</h1>
+              <h2>Menú</h2>
             </div>
+            <button id="close-sidebar-mobile" class="close-sidebar-btn" type="button" aria-label="Cerrar menú">×</button>
           </div>
-          <div class="user-menu">
-            <span id="user-label"></span>
-            <span id="role-label" class="role"></span>
+
+          <nav class="sidebar-nav">
+            <!-- Pestaña 1: Inventario General -->
+            <button id="nav-inventory" class="sidebar-item" type="button">
+              <span class="icon">📦</span>
+              <span>Inventario Completo</span>
+            </button>
+
+            <div class="sidebar-divider"></div>
+            <p class="sidebar-section-title">Viajes por fecha</p>
+            
+            <!-- Lista donde se cargarán los viajes dinámicamente -->
+            <div id="sidebar-trips-list" class="trips-list"></div>
+
+            <!-- Botón para crear un nuevo viaje -->
+            <button id="new-trip-btn" class="sidebar-item add-trip-btn" type="button">
+              <span class="icon">+</span>
+              <span>Nuevo Viaje</span>
+            </button>
+          </nav>
+
+          <div class="sidebar-footer">
+            <div class="user-info">
+              <span id="user-label"></span>
+              <span id="role-label" class="role"></span>
+            </div>
             <button id="logout-button" class="small-button" type="button">Salir</button>
           </div>
-        </header>
+        </aside>
 
-        <p id="app-status" class="status" aria-live="polite"></p>
+        <!-- CONTENIDO PRINCIPAL -->
+        <main class="main-content">
+          <!-- Botón de apertura para móviles -->
+          <header class="mobile-header">
+            <button id="toggle-sidebar" class="icon-button" type="button">☰ Menú</button>
+            <h1 class="mobile-title">Jusa Boutique</h1>
+          </header>
 
-        <div class="grid">
-          <section class="card">
-            <h2>Gastos de logística</h2>
-            <div class="field-grid">
-              <label>Cotización real (1 BRL a PYG)<input id="cotizacion" type="number" min="0" step="0.01" /></label>
-              <label>Pasajes totales (PYG)<input id="pasajes" type="number" min="0" step="1" /></label>
-              <label>Viáticos / comida (PYG)<input id="viaticos" type="number" min="0" step="1" /></label>
-              <label>Fletes / envíos (PYG)<input id="flete" type="number" min="0" step="1" /></label>
+          <p id="app-status" class="status" aria-live="polite"></p>
+
+          <!-- VISTA 1: CALCULADORA DEL VIAJE SELECCIONADO -->
+          <div id="view-calc">
+            <div class="view-header">
+              <h1 id="trip-title-display">Calculadora de Viaje</h1>
+              <span id="trip-date-display" class="trip-date-badge"></span>
             </div>
+
+            <div class="grid">
+              <section class="card">
+                <h2>Gastos del viaje</h2>
+                <div class="field-grid">
+                  <label>Cotización (1 BRL a PYG)<input id="cotizacion" type="number" min="0" step="0.01" /></label>
+                  <label>Pasajes totales (PYG)<input id="pasajes" type="number" min="0" step="1" /></label>
+                  <label>Viáticos / comida (PYG)<input id="viaticos" type="number" min="0" step="1" /></label>
+                  <label>Fletes / envíos (PYG)<input id="flete" type="number" min="0" step="1" /></label>
+                </div>
+              </section>
+
+              <section class="card">
+                <h2>Configuración y resumen</h2>
+                <div class="field-grid compact">
+                  <label>Cálculo de ganancia
+                    <select id="profit-mode">
+                      <option value="markup">Markup sobre costo</option>
+                      <option value="margin">Margen comercial sobre venta</option>
+                    </select>
+                  </label>
+                  <label>Distribución de gastos
+                    <select id="allocation-method">
+                      <option value="value">Proporcional al valor</option>
+                      <option value="quantity">Por cantidad de prendas</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="summary">
+                  <p>Total gastos <strong id="total-expenses">0 PYG</strong></p>
+                  <p>Total prendas <strong id="total-units">0 un.</strong></p>
+                  <p>Compra de prendas <strong id="total-purchase">0 PYG</strong></p>
+                  <p class="profit">Ganancia estimada <strong id="total-profit">0 PYG</strong></p>
+                </div>
+              </section>
+            </div>
+
+            <section class="card inventory-card">
+              <div class="section-heading">
+                <div><h2>Prendas agregadas al viaje</h2></div>
+                <button id="add-garment" class="button fit" type="button">+ Agregar prenda</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Prenda</th>
+                      <th>Cant.</th>
+                      <th>Costo (BRL)</th>
+                      <th>Compra (PYG)</th>
+                      <th>+ Viaje</th>
+                      <th>Costo real</th>
+                      <th>Ganancia %</th>
+                      <th>Precio venta</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="garment-rows"></tbody>
+                </table>
+              </div>
+              <div class="actions">
+                <button id="export-button" class="small-button dark" type="button">Descargar CSV</button>
+                <button id="print-button" class="small-button" type="button">Imprimir / PDF</button>
+              </div>
+            </section>
+          </div>
+
+          <!-- VISTA 2: INVENTARIO COMPLETO (SIMPLIFICADO) -->
+          <div id="view-inv" class="hidden">
+            <div class="view-header">
+              <h1>Inventario Completo</h1>
+            </div>
+            <section class="card inventory-card">
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="text-align:left;">Prenda</th>
+                      <th>Precio de venta</th>
+                      <th style="text-align:right;">Viaje de origen</th>
+                    </tr>
+                  </thead>
+                  <tbody id="all-garments-rows"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <!-- SECCIÓN DE EQUIPO -->
+          <section id="team-card" class="card hidden" style="margin-top:24px;">
+            <h2>Equipo</h2>
+            <p class="help">Invitá a una persona por correo para acceder al inventario compartido.</p>
+            <form id="invite-form" class="invite-form">
+              <label for="invite-email">Correo</label>
+              <input id="invite-email" type="email" placeholder="compañera@correo.com" required />
+              <label for="invite-role">Rol</label>
+              <select id="invite-role">
+                <option value="vendedora">Vendedora</option>
+                <option value="admin">Administradora</option>
+              </select>
+              <button class="button fit" type="submit">Invitar</button>
+            </form>
+            <p id="invite-status" class="status" aria-live="polite"></p>
+            <ul id="invite-list" class="invite-list"></ul>
           </section>
-
-          <section class="card">
-            <h2>Configuración y resumen</h2>
-            <div class="field-grid compact">
-              <label>Cálculo de ganancia
-                <select id="profit-mode"><option value="markup">Markup sobre costo</option><option value="margin">Margen comercial sobre venta</option></select>
-              </label>
-              <label>Distribución de gastos
-                <select id="allocation-method"><option value="value">Proporcional al valor</option><option value="quantity">Por cantidad de prendas</option></select>
-              </label>
-            </div>
-            <div class="summary">
-              <p>Total gastos <strong id="total-expenses">0 PYG</strong></p>
-              <p>Total prendas <strong id="total-units">0 un.</strong></p>
-              <p>Compra de prendas <strong id="total-purchase">0 PYG</strong></p>
-              <p class="profit">Ganancia estimada <strong id="total-profit">0 PYG</strong></p>
-            </div>
-          </section>
-        </div>
-
-        <section class="card inventory-card">
-          <div class="section-heading">
-            <div><h2>Inventario compartido</h2><p>Los cambios se guardan para todo el equipo.</p></div>
-            <button id="add-garment" class="button fit" type="button">+ Agregar prenda</button>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Prenda</th><th>Cant.</th><th>Costo (BRL)</th><th>Compra (PYG)</th><th>+ Viaje</th><th>Costo real</th><th>Ganancia %</th><th>Precio venta</th><th></th></tr></thead>
-              <tbody id="garment-rows"></tbody>
-            </table>
-          </div>
-          <div class="actions">
-            <button id="export-button" class="small-button dark" type="button">Descargar CSV</button>
-            <button id="print-button" class="small-button" type="button">Imprimir / guardar PDF</button>
-          </div>
-        </section>
-
-        <section id="team-card" class="card hidden">
-          <h2>Equipo</h2>
-          <p class="help">Invitá a una persona por correo. Cuando cree su cuenta con ese mismo correo, se unirá automáticamente al inventario compartido.</p>
-          <form id="invite-form" class="invite-form">
-            <label for="invite-email">Correo de la persona</label>
-            <input id="invite-email" type="email" placeholder="compañera@correo.com" required />
-            <label for="invite-role">Rol</label>
-            <select id="invite-role"><option value="vendedora">Vendedora</option><option value="admin">Administradora</option></select>
-            <button class="button fit" type="submit">Preparar invitación</button>
-          </form>
-          <p id="invite-status" class="status" aria-live="polite"></p>
-          <ul id="invite-list" class="invite-list"></ul>
-        </section>
+        </main>
       </section>
     </main>
+
     <script src="config.js"></script>
     <script type="module" src="app.js"></script>
   </body>
