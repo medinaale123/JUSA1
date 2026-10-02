@@ -8,7 +8,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@500;600&display=swap" rel="stylesheet" />
-    <!-- Librería para importar planillas Excel (.xlsx) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -87,6 +86,12 @@
             <button id="nav-sold" class="sidebar-item" type="button">
               <span class="icon">🛍️</span>
               <span>Prendas Vendidas</span>
+            </button>
+
+            <!-- NUEVA PESTAÑA CLIENTES DEBAJO DE PRENDAS VENDIDAS -->
+            <button id="nav-customers" class="sidebar-item" type="button">
+              <span class="icon">👥</span>
+              <span>Clientes</span>
             </button>
 
             <div class="sidebar-divider"></div>
@@ -313,6 +318,38 @@
                 </table>
               </div>
             </section>
+          </div>
+
+          <!-- Vista 4: Pestaña Clientes -->
+          <div id="view-customers" class="hidden">
+            <div class="view-header">
+              <h1>Directorio de Clientes</h1>
+              <button id="add-customer-btn" class="button fit" type="button">+ Nuevo Cliente</button>
+            </div>
+
+            <div class="summary-card-single card" style="margin-bottom:18px;">
+              <div class="summary-stats">
+                <div>
+                  <span>Deuda Total a Cobrar</span>
+                  <strong id="customers-total-debt" style="color:var(--danger);">0 PYG</strong>
+                </div>
+                <div>
+                  <span>Total Cobrado de Clientes</span>
+                  <strong id="customers-total-paid" style="color:#438a5e;">0 PYG</strong>
+                </div>
+              </div>
+            </div>
+
+            <section class="card toolbar-card" style="margin-bottom: 18px;">
+              <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input id="customer-search-input" type="text" placeholder="Buscar cliente por nombre o teléfono..." />
+              </div>
+            </section>
+
+            <div id="customers-list-container" class="customers-grid">
+              <!-- Se generan las tarjetas dinámicamente -->
+            </div>
           </div>
 
           <!-- Gestión de Equipo -->

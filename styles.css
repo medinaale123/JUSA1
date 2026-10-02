@@ -36,7 +36,7 @@ button { font:inherit; cursor:pointer; }
 .form-error { color:var(--danger); font-size:13px; margin:12px 0 0; text-align:left; }
 .notice { padding:16px; color:var(--danger); max-width:700px; margin:20px auto; } 
 
-/* BARRA LATERAL (DESKTOP + MOBILE) */
+/* BARRA LATERAL */
 .app-layout { display: flex; min-height: 100vh; }
 
 .sidebar { 
@@ -53,7 +53,7 @@ button { font:inherit; cursor:pointer; }
 }
 
 .sidebar-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
-.sidebar-logo { width: 44px; height: auto; }
+.sidebar-logo { width: 44px; height: 44px; object-fit: contain; flex-shrink: 0; }
 .close-sidebar-btn { display: none; background: transparent; border: none; font-size: 26px; cursor: pointer; margin-left: auto; padding: 4px 8px; }
 
 .sidebar-nav { flex: 1; display: flex; flex-direction: column; gap: 6px; }
@@ -107,7 +107,7 @@ button { font:inherit; cursor:pointer; }
 /* TOOLBAR Y BUSCADOR */
 .toolbar-card { padding: 14px 16px; margin-bottom: 18px; }
 .toolbar-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; align-items: center; }
-.search-box { position: relative; }
+.search-box { position: relative; width: 100%; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); opacity: 0.5; font-size: 14px; }
 .search-box input { padding-left: 36px; }
 
@@ -145,7 +145,6 @@ th { background:#f2e4e1; font-size:11px; text-transform:uppercase; letter-spacin
 td input[type="text"], td input[type="number"], td select { width: 100%; min-width: 60px; padding: 7px 4px; text-align: center; }
 td:nth-child(2) input { min-width: 120px; text-align: left; }
 
-/* Checkbox grande para celular */
 .sold-checkbox { width: 22px !important; height: 22px !important; accent-color: var(--accent-dark); cursor: pointer; margin: auto; display: block; }
 tr.sold-row { opacity: 0.55; background: #faf5f4; text-decoration: line-through; }
 tr.sold-row td input, tr.sold-row td select { text-decoration: line-through; }
@@ -154,10 +153,24 @@ tr.sold-row td input, tr.sold-row td select { text-decoration: line-through; }
 .delete { border:1px solid #edc7c5; color:var(--danger); border-radius:6px; background:#fff; padding:6px 10px; font-weight: bold; }
 .delete:hover { background:#fdf5f4; }
 
-.actions { justify-content:flex-start; margin-top:14px; }
-.invite-form { display:grid; grid-template-columns:2fr 1fr 1fr; gap:0 12px; align-items:end; }
-.invite-form .button { align-self:end; margin-bottom:0; }
-.invite-list { padding-left:20px; color:var(--muted); font-size:13px; }
+/* ESTILOS DE LA PESTAÑA CLIENTES */
+.customers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 14px; }
+.customer-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 4px 12px rgba(110,70,60,0.05); }
+.customer-card-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+.customer-name { font-size: 16px; font-weight: 700; color: var(--text); margin: 0; }
+.customer-phone { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+.badge-debt { background: #fdf5f4; color: var(--danger); border: 1px solid #edc7c5; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.badge-paid { background: #f2f9f3; color: #438a5e; border: 1px solid #c7e8cb; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+
+.customer-items-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; font-size: 12px; max-height: 200px; overflow-y: auto; }
+.customer-item-row { display: flex; justify-content: space-between; align-items: center; background: #f9f3f1; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); }
+.customer-item-info { display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.customer-item-title { font-weight: 600; color: var(--text); }
+.customer-item-sub { font-size: 11px; color: var(--muted); }
+
+.customer-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
+.customer-actions button { flex: 1; min-width: 90px; text-align: center; }
 
 .context-menu { 
   position: fixed; 
@@ -185,7 +198,6 @@ tr.sold-row td input, tr.sold-row td select { text-decoration: line-through; }
 .context-menu button:hover { background: #fdf5f4; }
 .context-menu button.danger-option { color: var(--danger); }
 
-/* ADAPTABILIDAD CELULARES Y TABLETS */
 @media (max-width: 850px) {
   .sidebar { transform: translateX(-100%); transition: transform 0.3s ease; width: 280px; box-shadow: 4px 0 20px rgba(0,0,0,0.15); }
   .sidebar.open { transform: translateX(0); }
@@ -200,6 +212,7 @@ tr.sold-row td input, tr.sold-row td select { text-decoration: line-through; }
   .btn-group { width: 100%; }
   .btn-group .button { flex: 1; width: 100%; text-align: center; }
   .summary-stats { flex-direction: column; gap: 10px; }
+  .customers-grid { grid-template-columns: 1fr; }
 }
 
 @media print {
