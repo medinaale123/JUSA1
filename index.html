@@ -3,12 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="description" content="Calculadora compartida de costos para Jusa Boutique" />
-    <title>Jusa Boutique · Calculadora</title>
+    <meta name="description" content="Sistema de gestión y calculadora Multi-tenant para Jusa Boutique" />
+    <title>TUBOUTIQUE · Sistema de Gestión Pro</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -17,81 +19,96 @@
         Configurá <code>config.js</code> con la URL y la clave anon de Supabase antes de abrir la aplicación.
       </section>
 
-      <!-- Autenticación -->
-      <section id="auth-view" class="auth-card hidden" aria-labelledby="auth-title">
-        <img src="Logo.png" alt="Jusa Boutique" class="logo" />
-        <h1 id="auth-title">Calculadora compartida</h1>
-        <p id="auth-subtitle">Ingresá con tu cuenta del equipo.</p>
-        <form id="auth-form" novalidate>
-          <label for="full-name" class="register-only hidden">Nombre</label>
-          <input id="full-name" class="register-only hidden" type="text" autocomplete="name" placeholder="Tu nombre" maxlength="80" />
-          <label for="email">Correo electrónico</label>
-          <input id="email" type="email" autocomplete="email" placeholder="nombre@correo.com" required />
-          <label for="password">Contraseña</label>
-          <input id="password" type="password" autocomplete="current-password" placeholder="Mínimo 8 caracteres" minlength="8" required />
-          <p id="auth-error" class="form-error hidden" role="alert"></p>
-          <button id="auth-submit" class="button" type="submit">Ingresar</button>
-        </form>
-        <button id="auth-toggle" class="link-button" type="button">Crear mi cuenta</button>
+      <!-- Pantalla de Bienvenida Animada -->
+      <div id="welcome-overlay" class="welcome-overlay hidden">
+        <div class="welcome-card">
+          <img src="Logo.png" alt="Logo Boutique" class="welcome-logo app-logo-target" />
+          <h1 id="welcome-user-name">¡Bienvenido/a!</h1>
+          <p class="welcome-sub">Cargando tu espacio boutique...</p>
+        </div>
+      </div>
+
+      <!-- Autenticación / Inicio de Sesión (Diseño Split-Screen SaaS) -->
+      <section id="auth-view" class="auth-split-layout hidden" aria-labelledby="auth-title">
+        <div class="auth-banner">
+          <div class="auth-banner-content">
+            <h2>Sistematizá tu éxito</h2>
+            <p>Transformá la gestión de tu boutique. Pasá de una administración analógica tradicional a un control 100% digital, optimizando tu tiempo, fletes y asegurando tu rentabilidad real.</p>
+            <img src="image_1a4194.png" alt="Análisis de Eficiencia TUBOUTIQUE" class="auth-promo-image" />
+          </div>
+        </div>
+
+        <div class="auth-form-container">
+          <div class="auth-card custom-auth-card">
+            <img src="tuboutique-logo.jpg" alt="TUBOUTIQUE SaaS Platform" class="tuboutique-brand-logo" />
+            <h1 id="auth-title" class="brand-title">TUBOUTIQUE</h1>
+            <p id="auth-subtitle">Ingresá con las credenciales asignadas a tu boutique.</p>
+            <form id="auth-form" novalidate>
+              <label for="full-name">Nombre</label>
+              <input id="full-name" type="text" autocomplete="name" placeholder="Tu nombre y apellido" required maxlength="80" />
+              <label for="email">Correo electrónico</label>
+              <input id="email" type="email" autocomplete="email" placeholder="nombre@correo.com" required />
+              <label for="password">Contraseña</label>
+              <input id="password" type="password" autocomplete="current-password" placeholder="Mínimo 8 caracteres" minlength="8" required />
+              <p id="auth-error" class="form-error hidden" role="alert"></p>
+              <button id="auth-submit" class="button auth-brand-btn" type="submit">Ingresar a mi Boutique</button>
+            </form>
+          </div>
+        </div>
       </section>
 
       <!-- Onboarding -->
       <section id="onboarding-view" class="auth-card hidden" aria-labelledby="onboarding-title">
-        <img src="Logo.png" alt="Jusa Boutique" class="logo" />
-        <h1 id="onboarding-title">Preparar la boutique</h1>
-        <p>Tu cuenta todavía no pertenece a un equipo. Si sos la encargada, creá el espacio compartido.</p>
+        <img src="tuboutique-logo.jpg" alt="TUBOUTIQUE SaaS" class="tuboutique-brand-logo" />
+        <h1 id="onboarding-title">Crear mi Boutique</h1>
+        <p>Tu cuenta aún no está asociada a un equipo. Registrá tu marca y comenzá con tu <strong>Prueba Gratis de 7 días (Plan Pro)</strong>.</p>
         <form id="business-form">
-          <label for="business-name">Nombre de la boutique</label>
-          <input id="business-name" value="Jusa Boutique" required maxlength="100" />
-          <p id="business-error" class="form-error hidden" role="alert"></p>
-          <button class="button" type="submit">Crear boutique compartida</button>
+          <label for="business-name">Nombre Comercial de la Boutique</label>
+          <input id="business-name" placeholder="Ej. Mi Boutique Elegante" required maxlength="100" />
+          <button class="button" type="submit">🚀 Crear y Acceder a mi Boutique</button>
         </form>
-        <button id="onboarding-password" class="link-button" type="button">Definir mi contraseña</button>
         <button id="onboarding-logout" class="link-button" type="button">Cerrar sesión</button>
-      </section>
-
-      <!-- Invitación -->
-      <section id="invite-accept-view" class="auth-card hidden" aria-labelledby="invite-accept-title">
-        <img src="Logo.png" alt="Jusa Boutique" class="logo" />
-        <h1 id="invite-accept-title">Terminá tu invitación</h1>
-        <form id="invite-accept-form" novalidate>
-          <label for="invite-password">Nueva contraseña</label>
-          <input id="invite-password" type="password" minlength="8" placeholder="Mínimo 8 caracteres" required />
-          <label for="invite-password-confirm">Repetí la contraseña</label>
-          <input id="invite-password-confirm" type="password" minlength="8" placeholder="Repetí la contraseña" required />
-          <p id="invite-accept-error" class="form-error hidden" role="alert"></p>
-          <button class="button" type="submit">Guardar contraseña y entrar</button>
-        </form>
       </section>
 
       <!-- Aplicación Principal -->
       <section id="app-view" class="app-layout hidden">
-        <!-- BARRA LATERAL -->
+        <!-- BARRA LATERAL IZQUIERDA -->
         <aside id="sidebar" class="sidebar">
           <div class="sidebar-header">
-            <img src="Logo.png" alt="Jusa Boutique" class="sidebar-logo" />
+            <img src="Logo.png" alt="Logo Boutique Inquilina" class="sidebar-logo app-logo-target" />
             <div>
-              <p class="eyebrow" id="business-label">Jusa Boutique</p>
+              <p class="eyebrow app-title-target" id="business-label">TUBOUTIQUE</p>
               <h2>Navegación</h2>
             </div>
             <button id="close-sidebar-mobile" class="close-sidebar-btn" type="button">×</button>
           </div>
 
           <nav class="sidebar-nav">
+            <button id="nav-dashboard" class="sidebar-item" type="button">
+              <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              <span>Panel KPI</span>
+            </button>
             <button id="nav-inventory" class="sidebar-item" type="button">
-              <span class="icon">📦</span>
+              <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
               <span>Stock Disponible</span>
             </button>
-
             <button id="nav-sold" class="sidebar-item" type="button">
-              <span class="icon">🛍️</span>
+              <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
               <span>Prendas Vendidas</span>
             </button>
-
-            <!-- NUEVA PESTAÑA CLIENTES DEBAJO DE PRENDAS VENDIDAS -->
             <button id="nav-customers" class="sidebar-item" type="button">
-              <span class="icon">👥</span>
-              <span>Clientes</span>
+              <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+              <span>Clientes / Créditos</span>
+              <span class="pro-tag hidden">PRO</span>
+            </button>
+            <button id="nav-team" class="sidebar-item" type="button">
+              <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <span>Equipo y Permisos</span>
+            </button>
+            <button id="nav-branding" class="sidebar-item" type="button">
+              <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.92 0 1.7-.75 1.7-1.67 0-.42-.17-.83-.42-1.17-.25-.33-.42-.75-.42-1.16 0-.92.75-1.67 1.67-1.67h1.92c3.08 0 5.58-2.5 5.58-5.58 0-4.83-4.42-8.75-10.08-8.75z"/></svg>
+              <span>Ajustes de Marca</span>
+              <span class="pro-tag hidden">PRO</span>
             </button>
 
             <div class="sidebar-divider"></div>
@@ -100,11 +117,15 @@
 
             <button id="new-trip-btn" class="sidebar-item add-trip-btn" type="button">
               <span class="icon">+</span>
-              <span>Nuevo Viaje</span>
+              <span>Nuevo Viaje / Compra</span>
             </button>
           </nav>
 
           <div class="sidebar-footer">
+            <div id="plan-badge-container" class="plan-badge-box">
+              <span id="plan-badge-title" class="plan-title">Plan Boutique Pro</span>
+              <span id="plan-badge-status" class="plan-sub">Trial: 7 días restantes</span>
+            </div>
             <div class="user-info">
               <span id="user-label"></span>
               <span id="role-label" class="role"></span>
@@ -113,36 +134,160 @@
           </div>
         </aside>
 
-        <!-- CONTENIDO PRINCIPAL -->
+        <!-- CONTENIDO PRINCIPAL CENTRAL -->
         <main class="main-content">
           <header class="mobile-header">
-            <button id="toggle-sidebar" class="icon-button" type="button">☰ Menú</button>
-            <h1 class="mobile-title">Jusa Boutique</h1>
+            <button id="toggle-sidebar-mobile" class="icon-button" type="button">☰ Menú</button>
+            <h1 class="mobile-title app-title-target">TUBOUTIQUE</h1>
           </header>
 
-          <p id="app-status" class="status" aria-live="polite"></p>
+          <!-- Banner Alerta de Pago Mensual -->
+          <div id="payment-alert-banner" class="payment-alert-banner hidden">
+            <div class="payment-alert-content">
+              <span id="payment-alert-icon">⚠️</span>
+              <span id="payment-alert-message">Tu suscripción mensual vencerá pronto.</span>
+            </div>
+            <button id="btn-pay-renewal" type="button" class="mini-btn whatsapp-btn">
+              Renueva ahora: 📲 WhatsApp Alex
+            </button>
+          </div>
 
-          <!-- Vista 1: Calculadora del Viaje -->
+          <div class="top-workspace-bar">
+            <div class="left-bar-controls">
+              <button id="toggle-sidebar-desktop" class="small-button toggle-sidebar-btn" type="button" title="Abrir/Cerrar Menú">
+                <span id="toggle-sidebar-icon">◀</span> Ocultar Menú
+              </button>
+              <p id="app-status" class="status" aria-live="polite"></p>
+            </div>
+          </div>
+
+          <!-- Vista 0: Dashboard de Bienvenida -->
+          <div id="view-dashboard" class="hidden">
+            <div class="dashboard-welcome-banner card">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
+                <div>
+                  <h1 id="dashboard-greeting-title">¡Bienvenido/a!</h1>
+                  <h2>¿Por dónde arrancamos hoy?</h2>
+                </div>
+                <button id="btn-support-wa" class="button whatsapp-btn fit" type="button" style="margin-top:0;">💬 Soporte Técnico</button>
+              </div>
+              <div class="quick-action-cards">
+                <button type="button" class="action-card" id="quick-go-calc">
+                  <span class="action-icon">✈</span>
+                  <strong>Calculadora</strong>
+                  <span>Simulá costos y márgenes de venta</span>
+                </button>
+                <button type="button" class="action-card" id="quick-go-stock">
+                  <span class="action-icon">📦</span>
+                  <strong>Stock Disponible</strong>
+                  <span>Catálogo activo e inventario</span>
+                </button>
+                <button type="button" class="action-card" id="quick-go-customers">
+                  <span class="action-icon">💳</span>
+                  <strong>Clientes / Fiados</strong>
+                  <span>Gestión completa de cartera</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Panel KPI Reorganizado y Estructurado -->
+            <div class="kpi-section" style="margin-top: 24px;">
+              <p class="kpi-section-title">📦 MÉTRICAS DE INVENTARIO ACTIVO</p>
+              <div class="kpi-grid kpi-grid-3">
+                <div class="kpi-card">
+                  <div class="kpi-header-row">
+                    <span class="kpi-title">Stock Valorizado (Costo Real)</span>
+                    <span class="kpi-icon">🏷</span>
+                  </div>
+                  <strong id="kpi-stock-cost" class="kpi-value">0 PYG</strong>
+                  <span class="kpi-sub" id="kpi-stock-units">0 unidades en inventario</span>
+                </div>
+                <div class="kpi-card">
+                  <div class="kpi-header-row">
+                    <span class="kpi-title">Proyección Venta Stock</span>
+                    <span class="kpi-icon">📊</span>
+                  </div>
+                  <strong id="kpi-stock-sale" class="kpi-value">0 PYG</strong>
+                  <span class="kpi-sub">Venta estimada al precio sugerido</span>
+                </div>
+                <div class="kpi-card highlight">
+                  <div class="kpi-header-row">
+                    <span class="kpi-title">Margen Neto Proyectado</span>
+                    <span class="kpi-icon">✨</span>
+                  </div>
+                  <strong id="kpi-potential-profit-value" class="kpi-value accent-text">0 PYG</strong>
+                  <span class="kpi-sub">Ganancia limpia del stock actual</span>
+                </div>
+              </div>
+
+              <p class="kpi-section-title" style="margin-top: 20px;">💼 BALANCE REALIZADO Y CARTERA DE CLIENTES</p>
+              <div class="kpi-grid kpi-grid-2">
+                <div class="kpi-card success">
+                  <div class="kpi-header-row">
+                    <span class="kpi-title">Ganancia Realizada (Histórico)</span>
+                    <span class="kpi-icon">🎉</span>
+                  </div>
+                  <strong id="kpi-sold-profit" class="kpi-value success-text">0 PYG</strong>
+                  <span class="kpi-sub" id="kpi-sold-units">0 prendas vendidas</span>
+                </div>
+                <div class="kpi-card danger">
+                  <div class="kpi-header-row">
+                    <span class="kpi-title">Cuentas por Cobrar (Fiados)</span>
+                    <span class="kpi-icon">⚠</span>
+                  </div>
+                  <strong id="kpi-debt-total" class="kpi-value danger-text">0 PYG</strong>
+                  <span class="kpi-sub" id="kpi-debt-clients">0 clientes con saldo</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Vista 1: Calculadora del Viaje / Ingreso -->
           <div id="view-calc">
             <div class="view-header">
-              <h1 id="trip-title-display">Calculadora de Viaje</h1>
+              <h1 id="trip-title-display">Calculadora</h1>
               <span id="trip-date-display" class="trip-date-badge"></span>
             </div>
 
+            <!-- BLOQUE DE COTIZACIÓN (Se oculta dinámicamente si es compra local) -->
+            <section class="card live-fx-card">
+              <div class="live-fx-header">
+                <div>
+                  <h3>🌐 Cotizador Internacional en Vivo</h3>
+                </div>
+                <button id="btn-fetch-rates" type="button" class="small-button">🔄 Obtener Cotización</button>
+              </div>
+              <div class="live-fx-grid">
+                <div class="fx-item">
+                  <span>1 BRL (Real) ➔</span>
+                  <strong id="fx-brl-pyg">Cargando...</strong>
+                  <button id="btn-apply-brl" type="button" class="mini-btn">Aplicar BRL</button>
+                </div>
+                <div class="fx-item">
+                  <span>1 USD (Dólar) ➔</span>
+                  <strong id="fx-usd-pyg">Cargando...</strong>
+                  <button id="btn-apply-usd" type="button" class="mini-btn">Aplicar USD</button>
+                </div>
+              </div>
+            </section>
+
             <div class="grid">
               <section class="card">
-                <h2>Gastos del viaje</h2>
+                <h2 id="calc-expenses-title">Gastos del Ingreso</h2>
                 <div class="field-grid">
-                  <label>Cotización (1 BRL a PYG)<input id="cotizacion" type="number" min="0" step="0.01" /></label>
-                  <label>Pasajes totales (PYG)<input id="pasajes" type="number" min="0" step="1" /></label>
-                  <label>Viáticos / comida (PYG)<input id="viaticos" type="number" min="0" step="1" /></label>
-                  <label>Fletes / envíos (PYG)<input id="flete" type="number" min="0" step="1" /></label>
+                  <label id="label-rate">Cotización (1 BRL/USD a PYG)<input id="cotizacion" type="number" min="0" step="0.01" /></label>
+                  <label id="label-expense-1">Pasajes totales (PYG)<input id="pasajes" type="number" min="0" step="1" /></label>
+                  <label id="label-expense-2">Viáticos / comida (PYG)<input id="viaticos" type="number" min="0" step="1" /></label>
+                  <label id="label-expense-3">Fletes / envíos (PYG)<input id="flete" type="number" min="0" step="1" /></label>
                 </div>
               </section>
 
               <section class="card">
-                <h2>Configuración y resumen</h2>
-                <div class="field-grid compact">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <h2>Configuración y resumen</h2>
+                  <button id="btn-open-math-modal" type="button" class="mini-btn" style="background:var(--accent-dark);">❓ ¿Cómo se calculan?</button>
+                </div>
+                <div class="field-grid compact" style="margin-top:10px;">
                   <label>Cálculo de ganancia
                     <select id="profit-mode"><option value="markup">Markup sobre costo</option><option value="margin">Margen comercial sobre venta</option></select>
                   </label>
@@ -153,13 +298,12 @@
                 <div class="summary">
                   <p>Total gastos <strong id="total-expenses">0 PYG</strong></p>
                   <p>Total prendas <strong id="total-units">0 un.</strong></p>
-                  <p>Compra de prendas <strong id="total-purchase">0 PYG</strong></p>
-                  <p class="profit">Ganancia estimada <strong id="total-profit">0 PYG</strong></p>
+                  <p>Compra de prendas <strong id="total-purchase">0 PYG</strong> <span id="total-purchase-usd" class="usd-sub">($0.00 USD)</span></p>
+                  <p class="profit">Ganancia estimada <strong id="total-profit">0 PYG</strong> <span id="total-profit-usd" class="usd-sub">($0.00 USD)</span></p>
                 </div>
               </section>
             </div>
 
-            <!-- BUSCADOR Y FILTROS -->
             <section class="card toolbar-card">
               <div class="toolbar-grid">
                 <div class="search-box">
@@ -196,10 +340,10 @@
 
             <section class="card inventory-card">
               <div class="section-heading">
-                <div><h2>Prendas del viaje</h2></div>
+                <div><h2>Prendas del ingreso</h2></div>
                 <div class="btn-group">
                   <label for="excel-file-input" class="button fit excel-btn">
-                    📂 Cargar Excel
+                    📂 Importar Excel
                     <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" style="display:none;" />
                   </label>
                   <button id="add-garment" class="button fit" type="button">+ Agregar prenda</button>
@@ -213,12 +357,12 @@
                       <th>Prenda</th>
                       <th>Categoría</th>
                       <th>Cant.</th>
-                      <th>Costo (BRL)</th>
+                      <th id="th-cost-origin">Costo (BRL / USD)</th>
                       <th>Compra (PYG)</th>
-                      <th>+ Viaje</th>
+                      <th>+ Gastos Extra</th>
                       <th>Costo real</th>
                       <th>Ganancia %</th>
-                      <th>Precio venta</th>
+                      <th id="th-sale-price">Precio venta (PYG / USD)</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -226,8 +370,8 @@
                 </table>
               </div>
               <div class="actions">
-                <button id="export-button" class="small-button dark" type="button">Descargar CSV</button>
-                <button id="print-button" class="small-button" type="button">Imprimir / PDF</button>
+                <button id="export-button" class="small-button dark" type="button">📊 Descargar Excel (.xlsx)</button>
+                <button id="print-button" class="small-button" type="button">Imprimir Vista</button>
               </div>
             </section>
           </div>
@@ -236,9 +380,11 @@
           <div id="view-inv" class="hidden">
             <div class="view-header">
               <h1>Stock Disponible</h1>
-              <span id="stock-count-badge" class="trip-date-badge">0 prendas en stock</span>
+              <div class="btn-group">
+                <button id="btn-share-catalog-wa" class="button fit whatsapp-btn" type="button" style="background-color: var(--accent-dark);">📄 Generar Catálogo PDF Pro</button>
+                <span id="stock-count-badge" class="trip-date-badge">0 prendas en stock</span>
+              </div>
             </div>
-
             <section class="card toolbar-card" style="margin-bottom: 18px;">
               <div class="toolbar-grid">
                 <div class="search-box">
@@ -248,23 +394,10 @@
                 <div class="filter-box">
                   <select id="inv-filter-category">
                     <option value="ALL">Todas las Categorías</option>
-                    <option value="General">General</option>
-                    <option value="Remeras">Remeras</option>
-                    <option value="Blusas">Blusas</option>
-                    <option value="Jeans">Jeans</option>
-                    <option value="Pantalones">Pantalones</option>
-                    <option value="Vestidos">Vestidos</option>
-                    <option value="Enterizos">Enterizos</option>
-                    <option value="Faldas / Polleras">Faldas / Polleras</option>
-                    <option value="Abrigos / Sacos">Abrigos / Sacos</option>
-                    <option value="Calzados">Calzados</option>
-                    <option value="Accesorios">Accesorios</option>
-                    <option value="Otros">Otros</option>
                   </select>
                 </div>
               </div>
             </section>
-
             <section class="card inventory-card">
               <div class="table-wrap">
                 <table>
@@ -273,7 +406,7 @@
                       <th style="text-align:left;">Prenda</th>
                       <th>Categoría</th>
                       <th>Precio de venta</th>
-                      <th style="text-align:right;">Viaje de origen</th>
+                      <th style="text-align:right;">Origen / Lote</th>
                     </tr>
                   </thead>
                   <tbody id="all-garments-rows"></tbody>
@@ -288,7 +421,6 @@
               <h1>Prendas Vendidas</h1>
               <span id="sold-count-badge" class="trip-date-badge">0 vendidas</span>
             </div>
-
             <div class="summary-card-single card" style="margin-bottom:18px;">
               <div class="summary-stats">
                 <div>
@@ -301,7 +433,6 @@
                 </div>
               </div>
             </div>
-
             <section class="card inventory-card">
               <div class="table-wrap">
                 <table>
@@ -309,8 +440,11 @@
                     <tr>
                       <th style="text-align:left;">Prenda</th>
                       <th>Categoría</th>
-                      <th>Precio Cobrado</th>
-                      <th>Viaje de Origen</th>
+                      <th>Precio Final</th>
+                      <th>Pagado</th>
+                      <th>Deuda</th>
+                      <th>Cliente</th>
+                      <th>Lote de Origen</th>
                       <th>Acción</th>
                     </tr>
                   </thead>
@@ -320,60 +454,221 @@
             </section>
           </div>
 
-          <!-- Vista 4: Pestaña Clientes -->
+          <!-- Vista 4: Clientes -->
           <div id="view-customers" class="hidden">
             <div class="view-header">
-              <h1>Directorio de Clientes</h1>
-              <button id="add-customer-btn" class="button fit" type="button">+ Nuevo Cliente</button>
+              <div>
+                <h1>Directorio de Clientes y Créditos</h1>
+                <p style="font-size: 13px; color: var(--muted); margin-top: 2px;">Gestión completa de libreta, fiados y emisión de comprobantes PDF</p>
+              </div>
+              <button id="add-customer-btn-main" class="button fit" type="button">+ Nuevo Cliente</button>
             </div>
-
             <div class="summary-card-single card" style="margin-bottom:18px;">
               <div class="summary-stats">
                 <div>
-                  <span>Deuda Total a Cobrar</span>
-                  <strong id="customers-total-debt" style="color:var(--danger);">0 PYG</strong>
+                  <span>Deuda Total A Cobrar</span>
+                  <strong id="customers-total-debt-main" style="color:var(--danger);">0 PYG</strong>
                 </div>
                 <div>
-                  <span>Total Cobrado de Clientes</span>
-                  <strong id="customers-total-paid" style="color:#438a5e;">0 PYG</strong>
+                  <span>Total Cobrado Acumulado</span>
+                  <strong id="customers-total-paid-main" style="color:#438a5e;">0 PYG</strong>
+                </div>
+                <div>
+                  <span>Clientes Registrados</span>
+                  <strong id="customers-total-count-main">0</strong>
                 </div>
               </div>
             </div>
-
             <section class="card toolbar-card" style="margin-bottom: 18px;">
               <div class="search-box">
                 <span class="search-icon">🔍</span>
-                <input id="customer-search-input" type="text" placeholder="Buscar cliente por nombre o teléfono..." />
+                <input id="customer-search-input-main" type="text" placeholder="Buscar por nombre, apellido o teléfono..." />
               </div>
             </section>
-
-            <div id="customers-list-container" class="customers-grid">
-              <!-- Se generan las tarjetas dinámicamente -->
-            </div>
+            <div id="customers-list-container-main" class="customers-grid"></div>
           </div>
 
-          <!-- Gestión de Equipo -->
-          <section id="team-card" class="card hidden" style="margin-top:24px;">
-            <h2>Equipo</h2>
-            <p class="help">Invitá a una persona por correo para acceder al inventario compartido.</p>
-            <form id="invite-form" class="invite-form">
-              <label for="invite-email">Correo</label>
-              <input id="invite-email" type="email" placeholder="compañera@correo.com" required />
-              <label for="invite-role">Rol</label>
-              <select id="invite-role"><option value="vendedora">Vendedora</option><option value="admin">Administradora</option></select>
-              <button class="button fit" type="submit">Invitar</button>
-            </form>
-            <p id="invite-status" class="status" aria-live="polite"></p>
-            <ul id="invite-list" class="invite-list"></ul>
-          </section>
+          <!-- Vista 5: Gestión de Equipo -->
+          <div id="view-team" class="hidden">
+            <div class="view-header">
+              <div>
+                <h1>Equipo y Permisos</h1>
+                <p style="font-size: 13px; color: var(--muted); margin-top: 2px;">Administrá los miembros del equipo con acceso a esta boutique.</p>
+              </div>
+            </div>
+            <section class="card" style="max-width: 650px;">
+              <h2>Invitar Integrante al Equipo</h2>
+              <p class="help" style="margin-bottom: 16px;">
+                Invitá a una persona por correo para acceder al inventario e historial compartido. 
+                <br /><strong id="user-limit-msg" style="color:var(--accent-dark);">Límite de usuarios cargando...</strong>
+              </p>
+              <form id="invite-form" class="invite-form">
+                <label for="invite-email">Correo electrónico</label>
+                <input id="invite-email" type="email" placeholder="compañera@correo.com" required />
+                <label for="invite-role">Rol de acceso</label>
+                <select id="invite-role"><option value="vendedora">Vendedora</option><option value="admin">Administradora</option></select>
+                <button class="button" type="submit" style="margin-top: 18px;">Enviar Invitación</button>
+              </form>
+              <p id="invite-status" class="status" aria-live="polite"></p>
+              <div style="margin-top: 28px; border-top: 1px solid var(--border); padding-top: 18px;">
+                <h3>Miembros e Invitaciones Activas</h3>
+                <ul id="invite-list" class="invite-list" style="margin-top: 12px; padding-left: 20px;"></ul>
+              </div>
+            </section>
+          </div>
+
+          <!-- Vista 6: Ajustes de Marca -->
+          <div id="view-branding" class="hidden">
+            <div class="view-header"><h1>Personalización de Marca y Colores</h1></div>
+            <section class="card" style="max-width: 680px;">
+              <form id="branding-form" style="margin-top: 16px;">
+                <label for="brand-name-input">Nombre Comercial de la Boutique</label>
+                <input id="brand-name-input" type="text" required />
+                <label for="brand-logo-input">URL del Logo</label>
+                <input id="brand-logo-input" type="url" required />
+                <div style="margin-top: 12px; text-align: center; background: #fffcfb; padding: 12px; border: 1px dashed var(--border); border-radius: 10px;">
+                  <span style="display:block; font-size:10px; color:var(--muted); margin-bottom:8px; text-transform:uppercase; font-weight:700;">Vista Previa</span>
+                  <img id="brand-logo-preview" src="Logo.png" alt="Preview del Logo" style="max-height: 80px; max-width: 100%; object-fit: contain; border-radius: 4px;" />
+                </div>
+                <div class="color-pickers-explanatory-grid">
+                  <div class="color-guide-item"><label>Color Principal</label><input id="brand-primary-color" type="color"/></div>
+                  <div class="color-guide-item"><label>Color Fondo</label><input id="brand-bg-color" type="color"/></div>
+                  <div class="color-guide-item"><label>Color Acento Oscuro</label><input id="brand-dark-color" type="color"/></div>
+                </div>
+                <button class="button" type="submit" style="margin-top: 20px;">💾 Guardar y Aplicar Marca</button>
+              </form>
+            </section>
+          </div>
         </main>
       </section>
     </main>
 
-    <!-- Menú contextual para clic derecho -->
+    <!-- MODAL NUEVO LOTE/VIAJE / COMPRA LOCAL -->
+    <div id="new-trip-modal" class="modal-overlay hidden">
+      <div class="modal-card" style="max-width: 500px;">
+        <div class="modal-header">
+          <h2>📦 Nuevo Ingreso de Mercadería</h2>
+          <button id="close-new-trip-modal" class="close-modal-btn">×</button>
+        </div>
+        <form id="new-trip-form" style="margin-top: 16px;">
+          <label for="new-trip-name">Nombre / Identificador</label>
+          <input id="new-trip-name" type="text" placeholder="Ej. Viaje SP, Compras Mercado 4..." required />
+
+          <label style="margin-top:16px;">Tipo de Ingreso</label>
+          <div style="display:flex; gap:10px; margin-top:8px;">
+            <label class="radio-card">
+              <input type="radio" name="trip_type" value="viaje" checked style="display:none;" />
+              <div class="radio-card-content">
+                <span style="font-size:24px; display:block;">✈️</span>
+                <strong style="display:block; margin:6px 0 4px;">Viaje Int.</strong>
+                <span style="font-size:10px; color:var(--muted); text-transform:none; font-weight:normal;">Incluye pasajes, viáticos y fletes.</span>
+              </div>
+            </label>
+            <label class="radio-card">
+              <input type="radio" name="trip_type" value="local" style="display:none;" />
+              <div class="radio-card-content">
+                <span style="font-size:24px; display:block;">🛍️</span>
+                <strong style="display:block; margin:6px 0 4px;">Compra Local</strong>
+                <span style="font-size:10px; color:var(--muted); text-transform:none; font-weight:normal;">Se costea todo directo en PYG.</span>
+              </div>
+            </label>
+          </div>
+          <button class="button" type="submit" style="margin-top: 24px;">Crear Ingreso</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modales Adicionales que ya tenías -->
+    <div id="plan-upgrade-modal" class="modal-overlay hidden">
+      <div class="modal-card" style="max-width: 500px; text-align: center;">
+        <div class="modal-header">
+          <h2>🔒 Función Exclusiva de Plan Superior</h2>
+          <button id="close-upgrade-modal" class="close-modal-btn">×</button>
+        </div>
+        <p style="font-size: 14px; color: var(--muted); margin-top: 10px;" id="upgrade-modal-text">
+          Esta herramienta requiere una membresía activa <strong>Plan Boutique Pro</strong> o <strong>Agencia VIP 360°</strong>.
+        </p>
+        <div style="background: var(--accent-light); padding: 16px; border-radius: 12px; margin: 16px 0; border: 1px solid var(--border);">
+          <strong style="color: var(--accent-dark); font-size: 16px; display: block;">Upgrade a Boutique Pro ($49/mes)</strong>
+          <span style="font-size: 12px; color: var(--text); margin-top: 4px; display: block;">Incluye CRM de Fiados, Comprobantes de WhatsApp, Catálogo Interactivo y Personalización de Marca.</span>
+        </div>
+        <button id="btn-request-upgrade" class="button whatsapp-btn" type="button">
+          Renueva ahora: 📲 WhatsApp Alex
+        </button>
+      </div>
+    </div>
+
+    <div id="math-modal" class="modal-overlay hidden">
+      <div class="modal-card" style="max-width: 600px;">
+        <div class="modal-header">
+          <h2>📐 Explicación Matemática de la Calculadora</h2>
+          <button id="close-math-modal" class="close-modal-btn">×</button>
+        </div>
+        <div class="math-explanation-content" style="font-size: 13px; line-height: 1.6; color: var(--text);">
+          <p>La calculadora convierte de forma transparente tus costos extranjeros y reparte los gastos del viaje de forma justa entre cada prenda:</p>
+          <ol style="padding-left: 20px; margin: 12px 0;">
+            <li style="margin-bottom: 8px;"><strong>1. Compra Base en PYG:</strong><br /><code>Precio Prenda (BRL/USD) × Cotización Día = Compra (PYG)</code></li>
+            <li style="margin-bottom: 8px;"><strong>2. Gastos Extras (+Viaje):</strong><br />Se suman Pasajes/Movilidad + Viáticos + Fletes.<br /><em>Proporcional al Valor:</em> Asigna más gasto a prendas más caras.<br /><em>Por Cantidad:</em> Reparte el gasto por igual.</li>
+            <li style="margin-bottom: 8px;"><strong>3. Costo Real:</strong><br /><code>Compra (PYG) + Gastos Asignados = Costo Real</code></li>
+            <li style="margin-bottom: 8px;"><strong>4. Precio Venta Final:</strong><br /><em>Markup (sobre costo):</em> <code>Costo Real × (1 + %Ganancia/100)</code><br /><em>Margen (sobre venta):</em> <code>Costo Real ÷ (1 - %Ganancia/100)</code></li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <div id="pos-modal" class="modal-overlay hidden">
+      <div class="modal-card pos-modal-card">
+        <div class="modal-header">
+          <div>
+            <h2>🛍️ Selección de Stock - Punto de Venta</h2>
+            <p id="pos-customer-title" style="font-size: 13px; color: var(--accent-dark); font-weight: 600; margin-top: 2px;"></p>
+          </div>
+          <button id="close-pos-modal" class="close-modal-btn">×</button>
+        </div>
+        <div class="pos-layout">
+          <div class="pos-stock-col">
+            <div class="search-box" style="margin-bottom: 10px;">
+              <span class="search-icon">🔍</span>
+              <input id="pos-search-input" type="text" placeholder="Buscar prenda por nombre..." />
+            </div>
+            <div class="table-wrap pos-stock-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="text-align:left;">Prenda</th>
+                    <th>Stock</th>
+                    <th>Precio (PYG)</th>
+                    <th>Acción</th>
+                  </tr>
+                </thead>
+                <tbody id="pos-stock-rows"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="pos-cart-col">
+            <h3>🛒 Carrito de Compras</h3>
+            <div id="pos-cart-items-container" class="pos-cart-items-list">
+              <p style="font-size: 12px; color: var(--muted); text-align: center; margin-top: 20px;">El carrito está vacío. Seleccioná prendas del stock.</p>
+            </div>
+            <div class="pos-checkout-box">
+              <div class="pos-total-row"><span>Total a Cobrar:</span><strong id="pos-cart-total-display">0 PYG</strong></div>
+              <label for="pos-payment-type" style="margin-top: 10px;">Modalidad de Pago</label>
+              <select id="pos-payment-type"><option value="FULL">Contado (Pago Completo)</option><option value="CREDIT">A Crédito / Fiado (Con o Sin Seña)</option></select>
+              <div id="pos-initial-pay-group" class="hidden" style="margin-top: 10px;">
+                <label for="pos-initial-payment">Monto Entregado / Seña Inicial (PYG)</label>
+                <input id="pos-initial-payment" type="number" min="0" step="1" placeholder="Ej. 50000 (0 si es fiado total)" value="0" />
+              </div>
+              <button id="btn-confirm-pos-checkout" class="button whatsapp-btn" type="button" style="margin-top: 14px; width: 100%;">✅ Confirmar Venta</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Menú Contextual Viajes -->
     <div id="trip-context-menu" class="context-menu hidden">
-      <button id="ctx-rename-trip" type="button">✏️ Renombrar viaje</button>
-      <button id="ctx-delete-trip" type="button" class="danger-option">🗑️ Eliminar viaje</button>
+      <button id="ctx-rename-trip" type="button">✏️ Renombrar ingreso</button>
+      <button id="ctx-delete-trip" type="button" class="danger-option">🗑️ Eliminar ingreso</button>
     </div>
 
     <script src="config.js"></script>
