@@ -65,8 +65,31 @@ create table public.garments (
 create index garments_business_id_idx on public.garments (business_id);
 create index invitations_business_email_idx on public.invitations (business_id, lower(email));
 
--- Se crea un perfil al registrarse y se acepta automáticamente una invitación
--- dirigida a ese correo. La validación se ejecuta en la base, no en el navegador.
+-- Acepta las invitaciones dirigidas a un correo ya verificado. Solo se ejecuta
+-- desde los triggers de auth.users: nadie puede llamarla desde la aplicación.
+create or replace function public.accept_invitations(target_user_id uuid, target_email text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if coalesce(trim(target_email), '') = '' then
+    return;
+  end if;
+  with accepted as (
+    delete from public.invitations
+    where lower(email) = lower(trim(target_email))
+    returning business_id, role
+  )
+  insert into public.memberships (business_id, user_id, role)
+  select business_id, target_user_id, role from accepted
+  on conflict (business_id, user_id) do nothing;
+end;
+$$;
+
+-- Se crea un perfil al registrarse. La invitación se acepta solo cuando el
+-- correo quedó verificado: así nadie obtiene acceso registrando el correo de
+-- otra persona. La validación se ejecuta en la base, no en el navegador.
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -78,16 +101,33 @@ begin
     new.id,
     lower(coalesce(new.email, '')),
     coalesce(new.raw_user_meta_data ->> 'full_name', '')
-  );
+  )
+  on conflict (id) do update set email = excluded.email;
 
-  insert into public.memberships (business_id, user_id, role)
-  select i.business_id, new.id, i.role
-  from public.invitations i
-  where lower(i.email) = lower(coalesce(new.email, ''))
-  on conflict do nothing;
+  if new.email_confirmed_at is not null then
+    perform public.accept_invitations(new.id, new.email);
+  end if;
+  return new;
+end;
+$$;
 
-  delete from public.invitations
-  where lower(email) = lower(coalesce(new.email, ''));
+-- Mantiene el perfil al día cuando el correo se verifica o se cambia, y acepta
+-- las invitaciones dirigidas al correo recién verificado.
+create or replace function public.handle_user_confirmed()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  update public.profiles set email = lower(coalesce(new.email, ''))
+  where id = new.id and email is distinct from lower(coalesce(new.email, ''));
+
+  if new.email_confirmed_at is not null and (
+    old.email_confirmed_at is null
+    or lower(coalesce(old.email, '')) is distinct from lower(coalesce(new.email, ''))
+  ) then
+    perform public.accept_invitations(new.id, new.email);
+  end if;
   return new;
 end;
 $$;
@@ -95,6 +135,10 @@ $$;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+create trigger on_auth_user_confirmed
+  after update of email, email_confirmed_at on auth.users
+  for each row execute procedure public.handle_user_confirmed();
 
 create or replace function public.is_business_member(target_business_id uuid)
 returns boolean
@@ -155,10 +199,15 @@ begin
   if not public.is_business_admin(target_business_id) then
     raise exception 'Solo una administradora puede invitar al equipo';
   end if;
-  if trim(target_email) = '' then
+  if coalesce(trim(target_email), '') !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
     raise exception 'Ingresá un correo válido';
   end if;
-  select id into target_user_id from public.profiles where lower(email) = lower(trim(target_email));
+  -- Solo una cuenta con el correo verificado puede unirse en el momento: si no,
+  -- alguien que se registre con el correo de otra persona sin confirmarlo
+  -- recibiría la membresía en su lugar.
+  select u.id into target_user_id
+  from auth.users u
+  where lower(u.email) = lower(trim(target_email)) and u.email_confirmed_at is not null;
   if target_user_id is not null then
     insert into public.memberships (business_id, user_id, role)
     values (target_business_id, target_user_id, target_role)
@@ -174,7 +223,7 @@ end;
 $$;
 
 create or replace function public.set_updated_at()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = public as $$
 begin
   new.updated_at = now();
   new.updated_by = auth.uid();
@@ -210,7 +259,26 @@ create policy "equipo borra prendas" on public.garments for delete to authentica
 grant usage on schema public to anon, authenticated;
 grant select on public.profiles, public.businesses, public.memberships, public.invitations, public.business_settings, public.garments to authenticated;
 grant insert on public.invitations, public.garments to authenticated;
-grant update on public.business_settings, public.garments to authenticated;
 grant delete on public.invitations, public.garments to authenticated;
+
+-- Solo las columnas editables desde la aplicación: business_id, id y las de
+-- auditoría no se pueden modificar, así una integrante no puede mover filas
+-- hacia otra boutique ni falsear updated_by.
+grant update (cotizacion, pasajes, viaticos, flete, profit_mode, allocation_method)
+  on public.business_settings to authenticated;
+grant update (name, quantity, price_brl, profit_percentage)
+  on public.garments to authenticated;
+
+-- Postgres otorga execute a public por defecto: hay que revocarlo antes de
+-- habilitar solo a las cuentas autenticadas.
+revoke execute on function public.create_business(text) from public, anon;
+revoke execute on function public.invite_member(uuid, text, public.member_role) from public, anon;
+revoke execute on function public.accept_invitations(uuid, text) from public, anon, authenticated;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+revoke execute on function public.handle_user_confirmed() from public, anon, authenticated;
+revoke execute on function public.is_business_member(uuid) from public, anon;
+revoke execute on function public.is_business_admin(uuid) from public, anon;
 grant execute on function public.create_business(text) to authenticated;
 grant execute on function public.invite_member(uuid, text, public.member_role) to authenticated;
+grant execute on function public.is_business_member(uuid) to authenticated;
+grant execute on function public.is_business_admin(uuid) to authenticated;
