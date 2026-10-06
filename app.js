@@ -10,6 +10,7 @@ const ALEX_SUPPORT_URL = 'https://wa.me/595986176114?text=Hola%20Equipo%20de%20S
 const state = { 
   client: null, 
   user: null, 
+  profile: null,
   membership: null, 
   business: null, 
   settings: null, 
@@ -26,6 +27,9 @@ const state = {
   liveRates: { brlToPyg: 0, usdToPyg: 0 },
   posCustomer: null,
   posCart: [],
+  paymentCustomer: null,
+  paymentPurchases: [],
+  paymentTotalDebt: 0,
   settingsTimer: null, 
   garmentTimers: new Map() 
 };
@@ -74,6 +78,34 @@ function setAuthMode(registerMode) {
   authError();
 }
 
+// NUEVO: SISTEMA DE MODALES PERSONALIZADOS (Reemplazo de alert, confirm, prompt)
+let confirmCallback = null;
+function openConfirmModal(title, text, actionBtnText, isDanger, callback) {
+  $('#confirm-modal-title').textContent = title;
+  $('#confirm-modal-text').textContent = text;
+  $('#confirm-modal-btn').textContent = actionBtnText;
+  
+  if(isDanger) {
+    $('#confirm-modal-btn').style.background = 'var(--danger)';
+  } else {
+    $('#confirm-modal-btn').style.background = 'var(--accent)';
+  }
+  
+  confirmCallback = callback;
+  show('#custom-confirm-modal');
+}
+
+let promptCallback = null;
+function openPromptModal(title, label, defaultValue, btnText, callback) {
+  $('#prompt-modal-title').textContent = title;
+  $('#prompt-modal-label').textContent = label;
+  $('#prompt-modal-input').value = defaultValue;
+  $('#prompt-modal-btn').textContent = btnText;
+  promptCallback = callback;
+  show('#custom-prompt-modal');
+  $('#prompt-modal-input').focus();
+}
+
 function getEffectivePlan() {
   if (!state.business) return { plan: 'emprendedora', isTrial: false, daysLeft: 0, isExpired: false, monthlyDaysLeft: 0, isMonthlyExpired: false };
 
@@ -105,20 +137,17 @@ function getEffectivePlan() {
 
 function checkMonthlySubscriptionAlert() {
   const planInfo = getEffectivePlan();
+  
+  if (planInfo.isExpired || planInfo.isMonthlyExpired || state.business?.subscription_status === 'expired') {
+    show('#plan-expired-modal');
+    return;
+  }
+
   const banner = $('#payment-alert-banner');
   const msg = $('#payment-alert-message');
   const icon = $('#payment-alert-icon');
-
   if (!banner || !msg) return;
   const status = state.business?.subscription_status;
-
-  if (planInfo.isMonthlyExpired || status === 'expired') {
-    msg.textContent = 'Tu cuota mensual ha vencido. Las funciones Pro han sido pausadas. Contactá a Alex vía WhatsApp.';
-    if (icon) icon.textContent = '🔴';
-    banner.className = 'payment-alert-banner expired';
-    show('#payment-alert-banner');
-    return;
-  }
 
   if (status === 'active' && planInfo.monthlyDaysLeft <= 5) {
     msg.textContent = `Tu suscripción mensual vence en ${planInfo.monthlyDaysLeft} día(s). Evitá cortes de servicio pagando vía WhatsApp a Alex.`;
@@ -252,6 +281,15 @@ function applyLiveUsdRate() {
   }
 }
 
+function applyLivePygRate() {
+  const rateInput = $('#cotizacion');
+  if (rateInput) { 
+    rateInput.value = 1; 
+    queueSettingsSave(); 
+    setStatus('Cotización fijada a 1 PYG (Compra Local).', 'success'); 
+  }
+}
+
 function applyDynamicBranding() {
   if (!state.business) return;
 
@@ -311,17 +349,19 @@ async function refreshWorkspace() {
   state.membership = membership;
   state.business = Array.isArray(membership.businesses) ? membership.businesses[0] : membership.businesses;
 
-  const [settingsRes, tripsRes, garmentsRes, customersRes, purchasesRes] = await Promise.all([
+  const [settingsRes, tripsRes, garmentsRes, customersRes, purchasesRes, profileRes] = await Promise.all([
     state.client.from('business_settings').select('*').eq('business_id', membership.business_id).single(),
     state.client.from('trips').select('*').eq('business_id', membership.business_id).order('created_at', { ascending: false }),
     state.client.from('garments').select('*').eq('business_id', membership.business_id).order('created_at', { ascending: false }),
     state.client.from('customers').select('*').eq('business_id', membership.business_id).order('name', { ascending: true }),
-    state.client.from('customer_purchases').select('*').eq('business_id', membership.business_id).order('created_at', { ascending: false })
+    state.client.from('customer_purchases').select('*').eq('business_id', membership.business_id).order('created_at', { ascending: false }),
+    state.client.from('profiles').select('*').eq('id', state.user.id).maybeSingle()
   ]);
 
   if (settingsRes.error) { setStatus(messageFrom(settingsRes.error), 'error'); return; }
 
   state.settings = settingsRes.data; state.trips = tripsRes.data || []; state.garments = garmentsRes.data || []; state.customers = customersRes.data || []; state.customerPurchases = purchasesRes.data || [];
+  if (profileRes.data) state.profile = profileRes.data;
 
   if (state.trips.length > 0 && !state.currentTripId) state.currentTripId = state.trips[0].id;
 
@@ -347,6 +387,7 @@ function renderSidebarNav() {
   $('#nav-customers')?.classList.toggle('active', state.currentView === 'customers');
   $('#nav-team')?.classList.toggle('active', state.currentView === 'team');
   $('#nav-branding')?.classList.toggle('active', state.currentView === 'branding');
+  $('#nav-profile')?.classList.toggle('active', state.currentView === 'profile');
 
   state.trips.forEach((trip) => {
     const isLocal = trip.trip_type === 'local';
@@ -369,14 +410,101 @@ function renderSidebarNav() {
 }
 
 function loadCurrentView() {
-  hide('#view-dashboard'); hide('#view-calc'); hide('#view-inv'); hide('#view-sold'); hide('#view-customers'); hide('#view-team'); hide('#view-branding');
+  hide('#view-dashboard'); hide('#view-calc'); hide('#view-inv'); hide('#view-sold'); hide('#view-customers'); hide('#view-team'); hide('#view-branding'); hide('#view-profile');
   if (state.currentView === 'dashboard') { show('#view-dashboard'); renderKpiDashboard(); } 
   else if (state.currentView === 'inventory') { show('#view-inv'); renderAllInventory(); } 
   else if (state.currentView === 'sold') { show('#view-sold'); renderSoldInventory(); } 
   else if (state.currentView === 'customers') { show('#view-customers'); renderCustomersMainView(); } 
   else if (state.currentView === 'team') { show('#view-team'); loadInvitations(); } 
   else if (state.currentView === 'branding') { show('#view-branding'); applyDynamicBranding(); } 
+  else if (state.currentView === 'profile') { show('#view-profile'); renderProfileView(); }
   else { show('#view-calc'); renderSettings(); renderGarments(); }
+}
+
+// ... [Manten todo el JS anterior hasta la función renderProfileView] ...
+
+function renderProfileView() {
+  const userName = state.user?.user_metadata?.full_name || state.profile?.full_name || 'Usuaria';
+  $('#profile-name-display').textContent = userName;
+  $('#profile-email-display').textContent = state.user?.email || '';
+  
+  // Mostrar el rol de la usuaria
+  const userRole = state.membership?.role || 'vendedora';
+  $('#profile-role-display').textContent = userRole === 'admin' ? 'Administradora' : 'Vendedora';
+
+  const planInfo = getEffectivePlan();
+  const bannerContainer = $('#profile-upgrade-container');
+  bannerContainer.replaceChildren();
+
+  // Integrar beneficios reales desde la Guía de Planes[cite: 19]
+  if (planInfo.plan === 'emprendedora') {
+    const banner = document.createElement('div');
+    banner.className = 'upgrade-banner';
+    banner.innerHTML = `
+      <div>
+        <h3>Plan Actual: Emprendedora</h3>
+        <p>Tienes acceso a la Calculadora de Viajes, Inventario y Excel masivo.</p>
+      </div>
+      <button class="button whatsapp-btn" style="width: auto; margin:0;" onclick="window.open('${ALEX_WHATSAPP_URL}', '_blank')">Sube a Plan Pro por $49/mes</button>
+    `;
+    bannerContainer.append(banner);
+  } else if (planInfo.plan === 'pro') {
+    const banner = document.createElement('div');
+    banner.className = 'upgrade-banner';
+    banner.innerHTML = `
+      <div>
+        <h3>Plan Actual: Boutique Pro</h3>
+        <p>Tienes acceso a CRM de Fiados, Comprobantes WhatsApp y Personalización.</p>
+      </div>
+      <button class="button whatsapp-btn" style="width: auto; margin:0;" onclick="window.open('${ALEX_WHATSAPP_URL}', '_blank')">Sube a Agencia VIP 360° por $299/mes</button>
+    `;
+    bannerContainer.append(banner);
+  } else {
+    const banner = document.createElement('div');
+    banner.className = 'upgrade-banner';
+    banner.innerHTML = `
+      <div>
+        <h3>Plan Actual: Agencia VIP 360°</h3>
+        <p>Tienes todos los accesos habilitados, incluyendo Tienda Web y Meta Ads.</p>
+      </div>
+    `;
+    bannerContainer.append(banner);
+  }
+
+  // Contraseña en public.profiles
+  if (state.profile && state.profile.password) {
+    $('#profile-saved-pwd-row').classList.remove('hidden');
+    $('#profile-saved-pwd-text').textContent = state.profile.password;
+  } else {
+    $('#profile-saved-pwd-row').classList.add('hidden');
+  }
+}
+
+// ... [Manten el resto del JS anterior] ...
+
+async function handlePasswordChange(e) {
+  e.preventDefault();
+  const newPwd = $('#profile-new-pwd').value;
+  if (!newPwd || newPwd.length < 6) {
+    setStatus('La contraseña debe tener al menos 6 caracteres.', 'error');
+    return;
+  }
+  
+  setStatus('Actualizando contraseña...');
+  const { data, error } = await state.client.auth.updateUser({ password: newPwd });
+  
+  if (error) {
+    setStatus(messageFrom(error), 'error');
+  } else {
+    setStatus('Contraseña actualizada con éxito.', 'success');
+    $('#profile-new-pwd').value = '';
+    // Si la guardaban en profiles, también la actualizamos ahí por coherencia con su requerimiento
+    if(state.profile) {
+      await state.client.from('profiles').update({ password: newPwd }).eq('id', state.user.id);
+      state.profile.password = newPwd;
+      renderProfileView();
+    }
+  }
 }
 
 function calculateGarmentSalePrice(garment) {
@@ -442,6 +570,35 @@ function addToPosCart(garment, salePrice) {
   renderPosStock(); renderPosCart();
 }
 
+function openManualDebtModal() {
+  $('#manual-debt-concept').value = '';
+  $('#manual-debt-amount').value = '';
+  show('#manual-debt-modal');
+  $('#manual-debt-concept').focus();
+}
+
+function processManualDebt() {
+  const concept = $('#manual-debt-concept').value.trim();
+  const amount = number($('#manual-debt-amount').value);
+  
+  if (!concept || amount <= 0) {
+    setStatus('Debe ingresar un concepto y un monto mayor a 0.', 'error');
+    return;
+  }
+
+  const manualItem = {
+    id: 'manual_' + Date.now(),
+    name: concept + ' (Manual)',
+    quantity: 9999,
+    price_brl: 0,
+    is_manual: true
+  };
+
+  state.posCart.push({ garment: manualItem, pricePyg: amount, qty: 1 });
+  renderPosCart();
+  hide('#manual-debt-modal');
+}
+
 function removeFromPosCart(garmentId) {
   state.posCart = state.posCart.filter((ci) => ci.garment.id !== garmentId);
   renderPosStock(); renderPosCart();
@@ -451,7 +608,7 @@ function renderPosCart() {
   const container = $('#pos-cart-items-container'); if (!container) return; container.replaceChildren();
 
   if (state.posCart.length === 0) {
-    container.innerHTML = `<p style="font-size: 12px; color: var(--muted); text-align: center; margin-top: 20px;">El carrito está vacío. Seleccioná prendas del stock.</p>`;
+    container.innerHTML = `<p style="font-size: 12px; color: var(--muted); text-align: center; margin-top: 20px;">El carrito está vacío.</p>`;
     if ($('#pos-cart-total-display')) $('#pos-cart-total-display').textContent = '0 PYG'; return;
   }
 
@@ -492,11 +649,15 @@ async function processPosCheckout() {
 
     purchasesToInsert.push({ business_id: state.membership.business_id, customer_id: state.posCustomer.id, item_name: cartItem.qty > 1 ? `${cartItem.garment.name} (${cartItem.qty} un.)` : cartItem.garment.name, price_pyg: itemTotalPrice, paid_pyg: itemPaidPrice });
 
-    if (cartItem.qty >= cartItem.garment.quantity) garmentUpdates.push(state.client.from('garments').update({ is_sold: true, customer_id: state.posCustomer.id }).eq('id', cartItem.garment.id));
-    else {
-      const newQty = cartItem.garment.quantity - cartItem.qty;
-      garmentUpdates.push(state.client.from('garments').update({ quantity: newQty }).eq('id', cartItem.garment.id));
-      garmentUpdates.push(state.client.from('garments').insert({ business_id: state.membership.business_id, trip_id: cartItem.garment.trip_id, name: cartItem.garment.name, category: cartItem.garment.category, quantity: cartItem.qty, price_brl: cartItem.garment.price_brl, profit_percentage: cartItem.garment.profit_percentage, is_sold: true, customer_id: state.posCustomer.id, updated_by: state.user.id }));
+    // Si NO es manual, afectar el stock de prendas
+    if (!cartItem.garment.is_manual) {
+      if (cartItem.qty >= cartItem.garment.quantity) {
+        garmentUpdates.push(state.client.from('garments').update({ is_sold: true, customer_id: state.posCustomer.id }).eq('id', cartItem.garment.id));
+      } else {
+        const newQty = cartItem.garment.quantity - cartItem.qty;
+        garmentUpdates.push(state.client.from('garments').update({ quantity: newQty }).eq('id', cartItem.garment.id));
+        garmentUpdates.push(state.client.from('garments').insert({ business_id: state.membership.business_id, trip_id: cartItem.garment.trip_id, name: cartItem.garment.name, category: cartItem.garment.category, quantity: cartItem.qty, price_brl: cartItem.garment.price_brl, profit_percentage: cartItem.garment.profit_percentage, is_sold: true, customer_id: state.posCustomer.id, updated_by: state.user.id }));
+      }
     }
   }
 
@@ -581,28 +742,19 @@ function renderSettings() {
   if ($('#label-expense-2') && $('#label-expense-2').firstChild) $('#label-expense-2').firstChild.nodeValue = isLocal ? 'Gastos Varios / Comida (PYG)' : 'Viáticos / comida (PYG)';
   if ($('#label-expense-3') && $('#label-expense-3').firstChild) $('#label-expense-3').firstChild.nodeValue = isLocal ? 'Delivery / Fletes (PYG)' : 'Fletes / envíos (PYG)';
   
-  // MODIFICACIÓN DE ENCABEZADOS Y COTIZADOR
   if ($('#th-cost-origin')) $('#th-cost-origin').textContent = isLocal ? 'Costo (PYG)' : 'Costo (BRL / USD)';
   if ($('#th-sale-price')) $('#th-sale-price').textContent = isLocal ? 'Precio venta (PYG)' : 'Precio venta (PYG / USD)';
 
-  // Ocultar Cotizador Internacional cuando es Compra Local
   const fxCard = document.querySelector('.live-fx-card');
   if (fxCard) {
-    if (isLocal) {
-      fxCard.classList.add('hidden');
-    } else {
-      fxCard.classList.remove('hidden');
-    }
+    if (isLocal) { fxCard.classList.add('hidden'); } 
+    else { fxCard.classList.remove('hidden'); }
   }
 
-  // Ocultar campo de cotización en Gastos si es Compra Local
   const labelRate = document.getElementById('label-rate');
   if (labelRate) {
-    if (isLocal) {
-      labelRate.classList.add('hidden');
-    } else {
-      labelRate.classList.remove('hidden');
-    }
+    if (isLocal) { labelRate.classList.add('hidden'); } 
+    else { labelRate.classList.remove('hidden'); }
   }
 
   if ($('#cotizacion')) {
@@ -646,7 +798,6 @@ function calculate() {
     const traEl = item.row.querySelector('[data-output="travel"]'); if (traEl) traEl.textContent = formatPYG(travelPerItem);
     const reaEl = item.row.querySelector('[data-output="real"]'); if (reaEl) reaEl.textContent = formatPYG(realCost);
     
-    // REMOVER EL USD SI ES COMPRA LOCAL
     const salEl = item.row.querySelector('[data-output="sale"]'); 
     if (salEl) {
       salEl.innerHTML = isLocal 
@@ -659,7 +810,6 @@ function calculate() {
   if ($('#total-units')) $('#total-units').textContent = `${totalUnits.toLocaleString('es-PY')} un.`;
   if ($('#total-purchase')) $('#total-purchase').textContent = formatPYG(totalPurchase);
   
-  // REMOVER EL USD DE LOS TOTALES SI ES COMPRA LOCAL
   if ($('#total-purchase-usd')) {
     $('#total-purchase-usd').style.display = isLocal ? 'none' : 'inline';
     if (!isLocal) $('#total-purchase-usd').textContent = `(${formatUSD(totalPurchase)})`;
@@ -705,7 +855,11 @@ function renderGarments() {
 
     const profitCell = document.createElement('td'); profitCell.append(inputFor('profit_percentage', garment.profit_percentage, { type: 'number', min: '0', step: '0.01' })); row.append(profitCell);
     const saleCell = document.createElement('td'); const saleSpan = document.createElement('span'); saleSpan.dataset.output = 'sale'; saleSpan.className = 'money'; saleCell.append(saleSpan); row.append(saleCell);
-    const deleteCell = document.createElement('td'); const delBtn = document.createElement('button'); delBtn.type = 'button'; delBtn.className = 'delete'; delBtn.textContent = '×'; delBtn.addEventListener('click', () => deleteGarment(garment.id)); deleteCell.append(delBtn); row.append(deleteCell);
+    const deleteCell = document.createElement('td'); const delBtn = document.createElement('button'); delBtn.type = 'button'; delBtn.className = 'delete'; delBtn.textContent = '×'; 
+    delBtn.addEventListener('click', () => {
+      openConfirmModal('Eliminar Prenda', '¿Seguro que deseas eliminar esta prenda del inventario?', 'Eliminar', true, () => deleteGarment(garment.id));
+    });
+    deleteCell.append(delBtn); row.append(deleteCell);
 
     row.querySelectorAll('input:not([type="checkbox"])').forEach((input) => input.addEventListener('input', () => queueGarmentSave(garment.id))); body.append(row);
   });
@@ -1015,12 +1169,16 @@ function renderCustomersMainView() {
       }).join('');
     }
 
-    card.innerHTML = `<div class="customer-card-header"><div><p class="customer-name">${customer.name}</p><p class="customer-phone">${customer.phone ? '📱 ' + customer.phone : 'Sin número de teléfono'}</p></div>${badgeHtml}</div><div class="customer-items-list">${itemsListHtml}</div><div class="customer-actions"><button type="button" class="small-button dark" data-add-item="${customer.id}">+ Prenda</button>${clientDebt > 0 ? `<button type="button" class="small-button" data-pay-debt="${customer.id}" style="border-color:#438a5e; color:#438a5e; font-weight:bold;">💵 Pago</button>` : ''}<button type="button" class="small-button whatsapp-btn" data-wa-ticket="${customer.id}">📄 PDF</button><button type="button" class="small-button" data-wa-chat="${customer.id}">💬 WPP</button><button type="button" class="small-button" data-del-customer="${customer.id}" style="color:var(--danger);">Borrar</button></div>`;
+    card.innerHTML = `<div class="customer-card-header"><div><p class="customer-name">${customer.name}</p><p class="customer-phone">${customer.phone ? '📱 ' + customer.phone : 'Sin número de teléfono'}</p></div>${badgeHtml}</div>
+    <div class="customer-items-list">${itemsListHtml}</div><div class="customer-actions"><button type="button" class="small-button dark" data-add-item="${customer.id}">+ Prenda</button>${clientDebt > 0 ? `<button type="button" class="small-button" data-pay-debt="${customer.id}" style="border-color:#438a5e; color:#438a5e; font-weight:bold;">💵 Pago</button>` : ''}<button type="button" class="small-button whatsapp-btn" data-wa-ticket="${customer.id}">📄 PDF</button><button type="button" class="small-button" data-wa-chat="${customer.id}">💬 WPP</button><button type="button" class="small-button" data-del-customer="${customer.id}" style="color:var(--danger);">Borrar</button></div>`;
 
     card.querySelector(`[data-add-item="${customer.id}"]`)?.addEventListener('click', () => openPosModal(customer));
-    card.querySelector(`[data-pay-debt="${customer.id}"]`)?.addEventListener('click', () => recordPaymentForCustomer(customer, purchases, clientDebt));
+    card.querySelector(`[data-pay-debt="${customer.id}"]`)?.addEventListener('click', () => openPaymentModal(customer, purchases, clientDebt));
     card.querySelector(`[data-wa-ticket="${customer.id}"]`)?.addEventListener('click', () => sendWhatsAppTicket(customer, purchases, totalClientPrice, totalClientPaid, clientDebt));
-    card.querySelector(`[data-del-customer="${customer.id}"]`)?.addEventListener('click', () => deleteCustomer(customer.id));
+    
+    card.querySelector(`[data-del-customer="${customer.id}"]`)?.addEventListener('click', () => {
+      openConfirmModal('Eliminar Cliente', `¿Estás seguro de eliminar a ${customer.name} y todo su historial de compras?`, 'Eliminar', true, () => deleteCustomer(customer.id));
+    });
     
     card.querySelector(`[data-wa-chat="${customer.id}"]`)?.addEventListener('click', () => {
       if(!customer.phone) { setStatus('Este cliente no tiene teléfono.', 'error'); return; }
@@ -1028,7 +1186,11 @@ function renderCustomersMainView() {
       window.open(`https://wa.me/${num}?text=Hola%20${customer.name},%20te%20escribimos%20de%20${state.business?.name||'TUBOUTIQUE'}...`, '_blank');
     });
 
-    card.querySelectorAll('[data-del-purchase]').forEach((btn) => { btn.addEventListener('click', (e) => deletePurchase(e.target.getAttribute('data-del-purchase'))); });
+    card.querySelectorAll('[data-del-purchase]').forEach((btn) => { 
+      btn.addEventListener('click', (e) => {
+        openConfirmModal('Eliminar Prenda', '¿Borrar esta prenda del historial del cliente?', 'Eliminar', true, () => deletePurchase(e.target.getAttribute('data-del-purchase')));
+      }); 
+    });
     container.append(card);
   });
 
@@ -1037,31 +1199,78 @@ function renderCustomersMainView() {
   if ($('#customers-total-count-main')) $('#customers-total-count-main').textContent = `${filtered.length} clientes`;
 }
 
-async function createCustomer() {
+function openNewCustomerModal() {
   if (!checkFeatureAccess('customers')) return;
-  const name = prompt('Nombre del cliente:'); if (!name) return;
-  const phone = prompt('Teléfono del cliente (ej. 595981123456):', '') || '';
-  const { data, error } = await state.client.from('customers').insert({ business_id: state.membership.business_id, name: name.trim(), phone: phone.trim() }).select().single();
-  if (error) { setStatus(messageFrom(error), 'error'); return; }
-  state.customers.unshift(data); if (state.currentView === 'customers') renderCustomersMainView(); renderKpiDashboard(); setStatus(`Cliente "${data.name}" agregado.`, 'success');
+  $('#new-customer-name').value = '';
+  $('#new-customer-phone').value = '';
+  show('#new-customer-modal');
 }
 
-async function recordPaymentForCustomer(customer, purchases, totalDebt) {
-  const amountStr = prompt(`Deuda actual: ${formatPYG(totalDebt)}\n¿Cuánto entrega hoy en PYG?`, totalDebt); if (!amountStr) return;
-  let amount = number(amountStr, 0); if (amount <= 0) return;
-  const pendingPurchases = purchases.filter((p) => Number(p.price_pyg) > Number(p.paid_pyg)).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+async function handleNewCustomerSubmit(e) {
+  e.preventDefault();
+  const name = $('#new-customer-name').value.trim();
+  const phone = $('#new-customer-phone').value.trim();
+
+  setStatus('Guardando cliente...');
+  const { data, error } = await state.client.from('customers').insert({ 
+    business_id: state.membership.business_id, 
+    name: name, 
+    phone: phone
+  }).select().single();
+
+  if (error) { setStatus(messageFrom(error), 'error'); return; }
+  
+  state.customers.unshift(data); 
+  hide('#new-customer-modal');
+  if (state.currentView === 'customers') renderCustomersMainView(); 
+  renderKpiDashboard(); 
+  setStatus(`Cliente "${data.name}" agregado.`, 'success');
+}
+
+function openPaymentModal(customer, purchases, totalDebt) {
+  state.paymentCustomer = customer;
+  state.paymentPurchases = purchases;
+  state.paymentTotalDebt = totalDebt;
+  
+  $('#payment-modal-debt').textContent = formatPYG(totalDebt);
+  $('#payment-modal-amount').value = '';
+  show('#custom-payment-modal');
+  $('#payment-modal-amount').focus();
+}
+
+async function handlePaymentSubmit(e) {
+  e.preventDefault();
+  const amountStr = $('#payment-modal-amount').value;
+  let amount = number(amountStr, 0); 
+  
+  if (amount <= 0) {
+    setStatus('Ingresa un monto válido.', 'error');
+    return;
+  }
+
+  const pendingPurchases = state.paymentPurchases.filter((p) => Number(p.price_pyg) > Number(p.paid_pyg)).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
   for (const p of pendingPurchases) {
     if (amount <= 0) break;
-    const due = Number(p.price_pyg) - Number(p.paid_pyg); const payForThis = Math.min(due, amount); const newPaid = Number(p.paid_pyg) + payForThis; amount -= payForThis;
+    const due = Number(p.price_pyg) - Number(p.paid_pyg); 
+    const payForThis = Math.min(due, amount); 
+    const newPaid = Number(p.paid_pyg) + payForThis; 
+    amount -= payForThis;
+    
     const { error } = await state.client.from('customer_purchases').update({ paid_pyg: newPaid }).eq('id', p.id);
-    if (!error) { const idx = state.customerPurchases.findIndex((cp) => cp.id === p.id); if (idx > -1) state.customerPurchases[idx].paid_pyg = newPaid; }
+    if (!error) { 
+      const idx = state.customerPurchases.findIndex((cp) => cp.id === p.id); 
+      if (idx > -1) state.customerPurchases[idx].paid_pyg = newPaid; 
+    }
   }
-  if (state.currentView === 'customers') renderCustomersMainView(); renderKpiDashboard(); setStatus(`Pago de ${customer.name} asentado.`, 'success');
+  
+  hide('#custom-payment-modal');
+  if (state.currentView === 'customers') renderCustomersMainView(); 
+  renderKpiDashboard(); 
+  setStatus(`Pago de ${state.paymentCustomer.name} asentado con éxito.`, 'success');
 }
 
 async function deleteCustomer(id) {
-  if (!window.confirm('¿Borrar cliente e historial?')) return;
   const { error } = await state.client.from('customers').delete().eq('id', id);
   if (error) { setStatus(messageFrom(error), 'error'); return; }
   state.customers = state.customers.filter((c) => c.id !== id); state.customerPurchases = state.customerPurchases.filter((cp) => cp.customer_id !== id);
@@ -1069,7 +1278,6 @@ async function deleteCustomer(id) {
 }
 
 async function deletePurchase(purchaseId) {
-  if (!window.confirm('¿Borrar esta prenda?')) return;
   const { error } = await state.client.from('customer_purchases').delete().eq('id', purchaseId);
   if (error) { setStatus(messageFrom(error), 'error'); return; }
   state.customerPurchases = state.customerPurchases.filter((cp) => cp.id !== purchaseId);
@@ -1192,17 +1400,6 @@ async function handleExcelUpload(event) {
   reader.readAsArrayBuffer(file);
 }
 
-function showExcelDiagnosticModal(items) {
-  const tableBody = $('#excel-preview-rows'); if (!tableBody) return; tableBody.replaceChildren();
-  items.slice(0, 15).forEach((item, index) => {
-    const row = document.createElement('tr');
-    row.innerHTML = `<td>${index + 1}</td><td style="text-align:left; font-weight:600;">${item.name}</td><td>${item.category}</td><td>${item.quantity}</td><td class="money">${item.price_brl.toFixed(2)} BRL</td><td>${item.profit_percentage}%</td>`;
-    tableBody.append(row);
-  });
-  if ($('#excel-total-count')) $('#excel-total-count').textContent = `Total: ${items.length} prendas.`;
-  show('#excel-modal');
-}
-
 async function confirmExcelImport() {
   if (!state.pendingExcelItems.length) return; hide('#excel-modal'); setStatus('Guardando prendas en Supabase…');
   const { data: inserted, error } = await state.client.from('garments').insert(state.pendingExcelItems).select();
@@ -1256,7 +1453,6 @@ async function addGarment() {
 }
 
 async function deleteGarment(id) {
-  if (!window.confirm('¿Eliminar prenda?')) return;
   const { error } = await state.client.from('garments').delete().eq('id', id);
   if (error) { setStatus(messageFrom(error), 'error'); return; }
   state.garments = state.garments.filter((item) => item.id !== id); renderGarments(); renderKpiDashboard(); setStatus('Prenda eliminada.', 'success');
@@ -1322,7 +1518,12 @@ async function initialize() {
 
   $('#search-input')?.addEventListener('input', renderGarments); $('#filter-category')?.addEventListener('change', renderGarments); $('#sort-select')?.addEventListener('change', renderGarments);
   $('#inv-search-input')?.addEventListener('input', renderAllInventory); $('#inv-filter-category')?.addEventListener('change', renderAllInventory);
-  $('#customer-search-input-main')?.addEventListener('input', renderCustomersMainView); $('#add-customer-btn-main')?.addEventListener('click', createCustomer);
+  $('#customer-search-input-main')?.addEventListener('input', renderCustomersMainView); 
+  
+  $('#add-customer-btn-main')?.addEventListener('click', openNewCustomerModal);
+  $('#new-customer-form')?.addEventListener('submit', handleNewCustomerSubmit);
+  $('#close-new-customer-modal')?.addEventListener('click', () => hide('#new-customer-modal'));
+
   $('#excel-file-input')?.addEventListener('change', handleExcelUpload);
   $('#close-excel-modal')?.addEventListener('click', () => hide('#excel-modal')); $('#btn-cancel-import')?.addEventListener('click', () => hide('#excel-modal')); $('#btn-confirm-import')?.addEventListener('click', confirmExcelImport);
 
@@ -1330,15 +1531,26 @@ async function initialize() {
   $('#btn-request-upgrade')?.addEventListener('click', () => window.open(ALEX_WHATSAPP_URL, '_blank'));
   $('#btn-pay-renewal')?.addEventListener('click', () => window.open(ALEX_WHATSAPP_URL, '_blank'));
   $('#btn-support-wa')?.addEventListener('click', () => window.open(ALEX_SUPPORT_URL, '_blank'));
+  $('#btn-renew-whatsapp')?.addEventListener('click', () => window.open(ALEX_WHATSAPP_URL, '_blank'));
 
   $('#btn-open-math-modal')?.addEventListener('click', () => show('#math-modal')); $('#close-math-modal')?.addEventListener('click', () => hide('#math-modal'));
   $('#close-pos-modal')?.addEventListener('click', () => hide('#pos-modal')); $('#pos-search-input')?.addEventListener('input', renderPosStock);
   $('#pos-payment-type')?.addEventListener('change', (e) => { if (e.target.value === 'CREDIT') show('#pos-initial-pay-group'); else hide('#pos-initial-pay-group'); });
+  
+  $('#custom-payment-form')?.addEventListener('submit', handlePaymentSubmit);
+  $('#close-payment-modal')?.addEventListener('click', () => hide('#custom-payment-modal'));
+
+  $('#btn-add-manual-debt')?.addEventListener('click', openManualDebtModal);
+  $('#manual-debt-form')?.addEventListener('submit', (e) => { e.preventDefault(); processManualDebt(); });
+  $('#close-manual-debt-modal')?.addEventListener('click', () => hide('#manual-debt-modal'));
+  $('#cancel-manual-debt-btn')?.addEventListener('click', () => hide('#manual-debt-modal'));
+
   $('#btn-confirm-pos-checkout')?.addEventListener('click', processPosCheckout);
 
   $('#btn-fetch-rates')?.addEventListener('click', fetchLiveExchangeRates); 
   $('#btn-apply-brl')?.addEventListener('click', applyLiveBrlRate); 
   $('#btn-apply-usd')?.addEventListener('click', applyLiveUsdRate);
+  $('#btn-apply-pyg')?.addEventListener('click', applyLivePygRate);
   
   $('#btn-share-catalog-wa')?.addEventListener('click', sendWhatsAppCatalog); 
   $('#branding-form')?.addEventListener('submit', saveBranding);
@@ -1349,6 +1561,24 @@ async function initialize() {
     }
   });
 
+  $('#profile-pwd-form')?.addEventListener('submit', handlePasswordChange);
+
+  // Botones de modales genéricos
+  $('#confirm-modal-btn')?.addEventListener('click', () => {
+    if(confirmCallback) confirmCallback();
+    hide('#custom-confirm-modal');
+  });
+  $('#close-confirm-modal')?.addEventListener('click', () => hide('#custom-confirm-modal'));
+  $('#cancel-confirm-modal')?.addEventListener('click', () => hide('#custom-confirm-modal'));
+
+  $('#prompt-modal-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if(promptCallback) promptCallback($('#prompt-modal-input').value);
+    hide('#custom-prompt-modal');
+  });
+  $('#close-prompt-modal')?.addEventListener('click', () => hide('#custom-prompt-modal'));
+  $('#cancel-prompt-modal')?.addEventListener('click', () => hide('#custom-prompt-modal'));
+
   $('#quick-go-calc')?.addEventListener('click', () => { state.currentView = 'calc'; loadCurrentView(); renderSidebarNav(); });
   $('#quick-go-stock')?.addEventListener('click', () => { state.currentView = 'inventory'; loadCurrentView(); renderSidebarNav(); });
   $('#quick-go-customers')?.addEventListener('click', () => { state.currentView = 'customers'; loadCurrentView(); renderSidebarNav(); });
@@ -1358,24 +1588,29 @@ async function initialize() {
   $('#close-sidebar-mobile')?.addEventListener('click', () => $('#sidebar')?.classList.remove('open'));
 
   ['#cotizacion', '#pasajes', '#viaticos', '#flete', '#profit-mode', '#allocation-method'].forEach((selector) => { $(selector)?.addEventListener('input', queueSettingsSave);$(selector)?.addEventListener('change', queueSettingsSave); });
-  document.addEventListener('click', () => hide('#trip-context-menu'));
-
-  $('#ctx-rename-trip')?.addEventListener('click', async () => {
-    if (!state.contextTripTarget) return;
-    const newName = prompt('Nuevo nombre del ingreso:', state.contextTripTarget.name); if (!newName) return;
-    const { error } = await state.client.from('trips').update({ name: newName.trim() }).eq('id', state.contextTripTarget.id);
-    if (error) { setStatus(messageFrom(error), 'error'); return; }
-    const idx = state.trips.findIndex((t) => t.id === state.contextTripTarget.id); if (idx > -1) state.trips[idx].name = newName.trim();
-    renderSidebarNav(); if (state.currentTripId === state.contextTripTarget.id) renderSettings(); setStatus('Nombre de ingreso actualizado.', 'success');
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#trip-context-menu') && !e.target.closest('.trip-item-btn')) hide('#trip-context-menu');
   });
 
-  $('#ctx-delete-trip')?.addEventListener('click', async () => {
+  $('#ctx-rename-trip')?.addEventListener('click', () => {
     if (!state.contextTripTarget) return;
-    if (!window.confirm(`¿Seguro que querés eliminar "${state.contextTripTarget.name}"? Se borrarán sus prendas.`)) return;
-    const { error } = await state.client.from('trips').delete().eq('id', state.contextTripTarget.id);
-    if (error) { setStatus(messageFrom(error), 'error'); return; }
-    state.trips = state.trips.filter((t) => t.id !== state.contextTripTarget.id); if (state.trips.length > 0) state.currentTripId = state.trips[0].id;
-    renderSidebarNav(); loadCurrentView(); setStatus('Ingreso eliminado.', 'success');
+    openPromptModal('Renombrar Ingreso', 'Nuevo nombre:', state.contextTripTarget.name, 'Guardar Cambios', async (newName) => {
+      if (!newName || !newName.trim()) return;
+      const { error } = await state.client.from('trips').update({ name: newName.trim() }).eq('id', state.contextTripTarget.id);
+      if (error) { setStatus(messageFrom(error), 'error'); return; }
+      const idx = state.trips.findIndex((t) => t.id === state.contextTripTarget.id); if (idx > -1) state.trips[idx].name = newName.trim();
+      renderSidebarNav(); if (state.currentTripId === state.contextTripTarget.id) renderSettings(); setStatus('Nombre de ingreso actualizado.', 'success');
+    });
+  });
+
+  $('#ctx-delete-trip')?.addEventListener('click', () => {
+    if (!state.contextTripTarget) return;
+    openConfirmModal('Eliminar Ingreso', `¿Seguro que querés eliminar "${state.contextTripTarget.name}"? Se borrarán todas sus prendas de forma irreversible.`, 'Eliminar', true, async () => {
+      const { error } = await state.client.from('trips').delete().eq('id', state.contextTripTarget.id);
+      if (error) { setStatus(messageFrom(error), 'error'); return; }
+      state.trips = state.trips.filter((t) => t.id !== state.contextTripTarget.id); if (state.trips.length > 0) state.currentTripId = state.trips[0].id;
+      renderSidebarNav(); loadCurrentView(); setStatus('Ingreso eliminado.', 'success');
+    });
   });
 
   $('#nav-dashboard')?.addEventListener('click', () => { state.currentView = 'dashboard'; $('#sidebar')?.classList.remove('open'); renderSidebarNav(); loadCurrentView(); });
@@ -1384,6 +1619,7 @@ async function initialize() {
   $('#nav-customers')?.addEventListener('click', () => { if (checkFeatureAccess('customers')) { state.currentView = 'customers'; $('#sidebar')?.classList.remove('open'); renderSidebarNav(); loadCurrentView(); } });
   $('#nav-team')?.addEventListener('click', () => { state.currentView = 'team'; $('#sidebar')?.classList.remove('open'); renderSidebarNav(); loadCurrentView(); });
   $('#nav-branding')?.addEventListener('click', () => { if (checkFeatureAccess('branding')) { state.currentView = 'branding'; $('#sidebar')?.classList.remove('open'); renderSidebarNav(); loadCurrentView(); } });
+  $('#nav-profile')?.addEventListener('click', () => { state.currentView = 'profile'; $('#sidebar')?.classList.remove('open'); renderSidebarNav(); loadCurrentView(); });
 
   $('#new-trip-btn')?.addEventListener('click', () => {
     const inputName = $('#new-trip-name');

@@ -28,7 +28,7 @@
         </div>
       </div>
 
-      <!-- Autenticación / Inicio de Sesión (Diseño Split-Screen SaaS) -->
+      <!-- Autenticación / Inicio de Sesión -->
       <section id="auth-view" class="auth-split-layout hidden" aria-labelledby="auth-title">
         <div class="auth-banner">
           <div class="auth-banner-content">
@@ -110,6 +110,10 @@
               <span>Ajustes de Marca</span>
               <span class="pro-tag hidden">PRO</span>
             </button>
+            <button id="nav-profile" class="sidebar-item" type="button">
+              <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span>Mi Perfil</span>
+            </button>
 
             <div class="sidebar-divider"></div>
             <p class="sidebar-section-title">Viajes por Fecha</p>
@@ -190,7 +194,6 @@
               </div>
             </div>
 
-            <!-- Panel KPI Reorganizado y Estructurado -->
             <div class="kpi-section" style="margin-top: 24px;">
               <p class="kpi-section-title">📦 MÉTRICAS DE INVENTARIO ACTIVO</p>
               <div class="kpi-grid kpi-grid-3">
@@ -242,6 +245,48 @@
             </div>
           </div>
 
+         <!-- ... [Manten todo el HTML anterior hasta la Vista Mi Perfil] ... -->
+
+          <!-- Vista Mi Perfil -->
+          <div id="view-profile" class="hidden">
+            <div class="view-header">
+              <h1>Mi Perfil y Suscripción</h1>
+              <p style="font-size: 13px; color: var(--muted); margin-top: 2px;">Gestión de cuenta y acceso</p>
+            </div>
+            
+            <div id="profile-upgrade-container"></div>
+            
+            <div class="profile-info-grid">
+              <section class="profile-card">
+                <h2>Datos Personales</h2>
+                <div style="margin-top: 16px;">
+                  <label>Nombre de Usuario</label>
+                  <strong id="profile-name-display" style="display:block; font-size:16px; margin-bottom:12px;">...</strong>
+                  <label>Rol en la Boutique</label>
+                  <strong id="profile-role-display" style="display:block; font-size:16px; margin-bottom:12px; text-transform: capitalize;">...</strong>
+                  <label>Correo Electrónico (Acceso)</label>
+                  <strong id="profile-email-display" style="display:block; font-size:16px; margin-bottom:12px;">...</strong>
+                  
+                  <div id="profile-saved-pwd-row" class="hidden" style="margin-top: 16px; background: #fffcfb; padding: 12px; border: 1px dashed var(--border); border-radius: 8px;">
+                    <label style="margin-top: 0;">Contraseña Registrada en Base de Datos</label>
+                    <strong id="profile-saved-pwd-text" style="font-family: monospace; color: var(--accent-dark);">...</strong>
+                  </div>
+                </div>
+              </section>
+
+              <section class="profile-card">
+                <h2>Cambiar Contraseña</h2>
+                <form id="profile-pwd-form" style="margin-top: 16px;">
+                  <label for="profile-new-pwd">Nueva Contraseña</label>
+                  <input id="profile-new-pwd" type="password" placeholder="Mínimo 6 caracteres" minlength="6" required />
+                  <button type="submit" class="button">Actualizar Acceso</button>
+                </form>
+              </section>
+            </div>
+          </div>
+
+<!-- ... [Manten el resto del HTML anterior] ... -->
+
           <!-- Vista 1: Calculadora del Viaje / Ingreso -->
           <div id="view-calc">
             <div class="view-header">
@@ -249,7 +294,6 @@
               <span id="trip-date-display" class="trip-date-badge"></span>
             </div>
 
-            <!-- BLOQUE DE COTIZACIÓN (Se oculta dinámicamente si es compra local) -->
             <section class="card live-fx-card">
               <div class="live-fx-header">
                 <div>
@@ -578,7 +622,101 @@
       </div>
     </div>
 
-    <!-- Modales Adicionales que ya tenías -->
+    <!-- MODAL NUEVO CLIENTE (CRM) -->
+    <div id="new-customer-modal" class="modal-overlay hidden">
+      <div class="modal-card" style="max-width: 450px;">
+        <div class="modal-header">
+          <h2>👤 Nuevo Cliente</h2>
+          <button id="close-new-customer-modal" class="close-modal-btn">×</button>
+        </div>
+        <form id="new-customer-form" style="margin-top: 16px;">
+          <label for="new-customer-name">Nombre y Apellido</label>
+          <input id="new-customer-name" type="text" placeholder="Ej. María López" required />
+          
+          <label for="new-customer-phone">Teléfono / WhatsApp</label>
+          <input id="new-customer-phone" type="text" placeholder="Ej. 595981123456" />
+          
+          <button class="button" type="submit" style="margin-top: 24px;">Crear Cliente</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- MODAL DE PAGO / ABONO PERSONALIZADO -->
+    <div id="custom-payment-modal" class="modal-overlay hidden">
+      <div class="modal-card" style="max-width: 400px; text-align: center;">
+        <div class="modal-header">
+          <h2>💵 Registrar Pago</h2>
+          <button id="close-payment-modal" class="close-modal-btn">×</button>
+        </div>
+        <p style="color: var(--muted); font-size: 13px; margin: 10px 0;">Deuda actual: <strong id="payment-modal-debt" style="color: var(--danger);">0 PYG</strong></p>
+        <form id="custom-payment-form">
+          <label for="payment-modal-amount" style="text-align: left;">¿Cuánto entrega hoy en PYG?</label>
+          <input id="payment-modal-amount" type="number" min="1" step="1" required />
+          <button class="button" type="submit" style="margin-top: 20px;">Aceptar y Registrar</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- MODAL BLOQUEO DE PLAN VENCIDO (HARD BLOCK) -->
+    <div id="plan-expired-modal" class="modal-overlay hidden" style="z-index: 99999; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);">
+      <div class="modal-card" style="max-width: 500px; text-align: center;">
+        <h2 style="color: var(--danger); font-size: 28px;">⚠️ Suscripción Vencida</h2>
+        <p style="margin: 20px 0; color: var(--text); font-size: 15px;">Tu plan de acceso ha finalizado. Para seguir utilizando el sistema y no perder el control de tu inventario y clientes, por favor renueva tu suscripción.</p>
+        <button id="btn-renew-whatsapp" class="button whatsapp-btn" style="font-size: 16px; padding: 16px; margin-top: 10px;">📲 Renovar ahora por WhatsApp</button>
+      </div>
+    </div>
+
+    <!-- MODALES DE REEMPLAZO GENÉRICOS (CONFIRM / PROMPT) -->
+    <div id="custom-confirm-modal" class="modal-overlay hidden" style="z-index: 99990;">
+      <div class="modal-card" style="max-width: 400px; text-align: center;">
+        <h2 id="confirm-modal-title" style="margin-bottom: 12px;">Confirmar</h2>
+        <p id="confirm-modal-text" style="color: var(--text); font-size: 14px; margin-bottom: 24px;">¿Estás seguro?</p>
+        <div style="display: flex; gap: 12px;">
+          <button id="cancel-confirm-modal" class="button outline" type="button" style="margin: 0;">Cancelar</button>
+          <button id="confirm-modal-btn" class="button" type="button" style="margin: 0;">Aceptar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="custom-prompt-modal" class="modal-overlay hidden" style="z-index: 99990;">
+      <div class="modal-card" style="max-width: 400px;">
+        <div class="modal-header">
+          <h2 id="prompt-modal-title">Renombrar</h2>
+          <button id="close-prompt-modal" class="close-modal-btn">×</button>
+        </div>
+        <form id="prompt-modal-form" style="margin-top: 16px;">
+          <label id="prompt-modal-label" for="prompt-modal-input">Valor:</label>
+          <input id="prompt-modal-input" type="text" required />
+          <div style="display: flex; gap: 12px; margin-top: 24px;">
+            <button id="cancel-prompt-modal" class="button outline" type="button" style="margin: 0;">Cancelar</button>
+            <button id="prompt-modal-btn" class="button" type="submit" style="margin: 0;">Guardar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- MODAL DEUDA MANUAL (Reemplazo del Prompt feo) -->
+    <div id="manual-debt-modal" class="modal-overlay hidden" style="z-index: 99990;">
+      <div class="modal-card" style="max-width: 450px;">
+        <div class="modal-header">
+          <h2>➕ Agregar Concepto Manual</h2>
+          <button id="close-manual-debt-modal" class="close-modal-btn">×</button>
+        </div>
+        <form id="manual-debt-form" style="margin-top: 16px;">
+          <label for="manual-debt-concept">Concepto de la deuda</label>
+          <input id="manual-debt-concept" type="text" placeholder="Ej. Saldo anterior, Ajuste, Costo extra..." required />
+          
+          <label for="manual-debt-amount" style="margin-top: 16px;">Monto a cobrar (PYG)</label>
+          <input id="manual-debt-amount" type="number" min="1" step="1" placeholder="Ej. 150000" required />
+
+          <div style="display: flex; gap: 12px; margin-top: 24px;">
+            <button id="cancel-manual-debt-btn" class="button outline" type="button" style="margin: 0;">Cancelar</button>
+            <button class="button" type="submit" style="margin: 0;">Agregar al Carrito</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <div id="plan-upgrade-modal" class="modal-overlay hidden">
       <div class="modal-card" style="max-width: 500px; text-align: center;">
         <div class="modal-header">
@@ -616,9 +754,10 @@
       </div>
     </div>
 
+    <!-- REESTRUCTURACIÓN DEL MODAL POS -->
     <div id="pos-modal" class="modal-overlay hidden">
       <div class="modal-card pos-modal-card">
-        <div class="modal-header">
+        <div class="modal-header" style="padding: 24px 24px 0 24px;">
           <div>
             <h2>🛍️ Selección de Stock - Punto de Venta</h2>
             <p id="pos-customer-title" style="font-size: 13px; color: var(--accent-dark); font-weight: 600; margin-top: 2px;"></p>
@@ -627,12 +766,15 @@
         </div>
         <div class="pos-layout">
           <div class="pos-stock-col">
-            <div class="search-box" style="margin-bottom: 10px;">
-              <span class="search-icon">🔍</span>
-              <input id="pos-search-input" type="text" placeholder="Buscar prenda por nombre..." />
+            <div style="margin-bottom: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
+              <div class="search-box" style="flex: 1; min-width: 200px;">
+                <span class="search-icon">🔍</span>
+                <input id="pos-search-input" type="text" placeholder="Buscar prenda por nombre..." />
+              </div>
+              <button id="btn-add-manual-debt" type="button" class="small-button dark" style="white-space: nowrap; margin: 0;">➕ Concepto / Saldo Libre</button>
             </div>
             <div class="table-wrap pos-stock-table-wrap">
-              <table>
+              <table style="min-width: auto;">
                 <thead>
                   <tr>
                     <th style="text-align:left;">Prenda</th>
@@ -648,17 +790,23 @@
           <div class="pos-cart-col">
             <h3>🛒 Carrito de Compras</h3>
             <div id="pos-cart-items-container" class="pos-cart-items-list">
-              <p style="font-size: 12px; color: var(--muted); text-align: center; margin-top: 20px;">El carrito está vacío. Seleccioná prendas del stock.</p>
+              <p style="font-size: 12px; color: var(--muted); text-align: center; margin-top: 20px;">El carrito está vacío. Seleccioná prendas del stock o agregá un concepto manual.</p>
             </div>
             <div class="pos-checkout-box">
-              <div class="pos-total-row"><span>Total a Cobrar:</span><strong id="pos-cart-total-display">0 PYG</strong></div>
-              <label for="pos-payment-type" style="margin-top: 10px;">Modalidad de Pago</label>
-              <select id="pos-payment-type"><option value="FULL">Contado (Pago Completo)</option><option value="CREDIT">A Crédito / Fiado (Con o Sin Seña)</option></select>
-              <div id="pos-initial-pay-group" class="hidden" style="margin-top: 10px;">
+              <div class="pos-total-row">
+                <span>Total a Cobrar:</span>
+                <strong id="pos-cart-total-display">0 PYG</strong>
+              </div>
+              <label for="pos-payment-type">Modalidad de Pago</label>
+              <select id="pos-payment-type" style="margin-bottom: 10px;">
+                <option value="FULL">Contado (Pago Completo)</option>
+                <option value="CREDIT">A Crédito / Fiado (Con o Sin Seña)</option>
+              </select>
+              <div id="pos-initial-pay-group" class="hidden">
                 <label for="pos-initial-payment">Monto Entregado / Seña Inicial (PYG)</label>
                 <input id="pos-initial-payment" type="number" min="0" step="1" placeholder="Ej. 50000 (0 si es fiado total)" value="0" />
               </div>
-              <button id="btn-confirm-pos-checkout" class="button whatsapp-btn" type="button" style="margin-top: 14px; width: 100%;">✅ Confirmar Venta</button>
+              <button id="btn-confirm-pos-checkout" type="button">✅ Confirmar Venta</button>
             </div>
           </div>
         </div>
