@@ -78,7 +78,6 @@ function setAuthMode(registerMode) {
   authError();
 }
 
-// NUEVO: SISTEMA DE MODALES PERSONALIZADOS (Reemplazo de alert, confirm, prompt)
 let confirmCallback = null;
 function openConfirmModal(title, text, actionBtnText, isDanger, callback) {
   $('#confirm-modal-title').textContent = title;
@@ -192,8 +191,9 @@ function updatePlanUIBadge() {
   document.querySelectorAll('.pro-tag').forEach((el) => { el.classList.toggle('hidden', isProOrVip); });
 
   const maxUsers = planInfo.plan === 'emprendedora' ? 2 : 5;
+  const teamCount = $('#invite-list')?.children?.length || 1;
   if ($('#user-limit-msg')) {
-    $('#user-limit-msg').textContent = `Límite de usuarias: ${state.customers.length} actuales / ${maxUsers} permitidas por tu ${planNames[planInfo.plan]}.`;
+    $('#user-limit-msg').textContent = `Límite de usuarias: ${teamCount} actuales / ${maxUsers} permitidas por tu ${planNames[planInfo.plan]}.`;
   }
 }
 
@@ -421,14 +421,11 @@ function loadCurrentView() {
   else { show('#view-calc'); renderSettings(); renderGarments(); }
 }
 
-// ... [Manten todo el JS anterior hasta la función renderProfileView] ...
-
 function renderProfileView() {
   const userName = state.user?.user_metadata?.full_name || state.profile?.full_name || 'Usuaria';
   $('#profile-name-display').textContent = userName;
   $('#profile-email-display').textContent = state.user?.email || '';
   
-  // Mostrar el rol de la usuaria
   const userRole = state.membership?.role || 'vendedora';
   $('#profile-role-display').textContent = userRole === 'admin' ? 'Administradora' : 'Vendedora';
 
@@ -436,7 +433,6 @@ function renderProfileView() {
   const bannerContainer = $('#profile-upgrade-container');
   bannerContainer.replaceChildren();
 
-  // Integrar beneficios reales desde la Guía de Planes[cite: 19]
   if (planInfo.plan === 'emprendedora') {
     const banner = document.createElement('div');
     banner.className = 'upgrade-banner';
@@ -471,7 +467,6 @@ function renderProfileView() {
     bannerContainer.append(banner);
   }
 
-  // Contraseña en public.profiles
   if (state.profile && state.profile.password) {
     $('#profile-saved-pwd-row').classList.remove('hidden');
     $('#profile-saved-pwd-text').textContent = state.profile.password;
@@ -479,8 +474,6 @@ function renderProfileView() {
     $('#profile-saved-pwd-row').classList.add('hidden');
   }
 }
-
-// ... [Manten el resto del JS anterior] ...
 
 async function handlePasswordChange(e) {
   e.preventDefault();
@@ -498,7 +491,6 @@ async function handlePasswordChange(e) {
   } else {
     setStatus('Contraseña actualizada con éxito.', 'success');
     $('#profile-new-pwd').value = '';
-    // Si la guardaban en profiles, también la actualizamos ahí por coherencia con su requerimiento
     if(state.profile) {
       await state.client.from('profiles').update({ password: newPwd }).eq('id', state.user.id);
       state.profile.password = newPwd;
@@ -649,7 +641,6 @@ async function processPosCheckout() {
 
     purchasesToInsert.push({ business_id: state.membership.business_id, customer_id: state.posCustomer.id, item_name: cartItem.qty > 1 ? `${cartItem.garment.name} (${cartItem.qty} un.)` : cartItem.garment.name, price_pyg: itemTotalPrice, paid_pyg: itemPaidPrice });
 
-    // Si NO es manual, afectar el stock de prendas
     if (!cartItem.garment.is_manual) {
       if (cartItem.qty >= cartItem.garment.quantity) {
         garmentUpdates.push(state.client.from('garments').update({ is_sold: true, customer_id: state.posCustomer.id }).eq('id', cartItem.garment.id));
@@ -1008,20 +999,8 @@ function renderSoldInventory() {
   if ($('#sold-total-profit')) $('#sold-total-profit').textContent = formatPYG(totalGanancia);
 }
 
+// Generación de PDFs Modernos y Descarga Directa
 async function generateAndSharePDF(doc, filename) {
-  try {
-    const pdfBlob = doc.output('blob');
-    const file = new File([pdfBlob], filename, { type: 'application/pdf' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({
-        files: [file],
-        title: filename,
-        text: '¡Hola! Te comparto este documento 📄✨'
-      });
-      return;
-    }
-  } catch (err) { console.log('Share API falló, procediendo a descarga.', err); }
-  
   doc.save(filename);
   setStatus('PDF generado y descargado con éxito.', 'success');
 }
@@ -1033,22 +1012,49 @@ async function sendWhatsAppTicket(customer, purchases, total, paid, debt) {
 
   setStatus('Generando Comprobante PDF...');
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ format: 'a4' });
+  const doc = new jsPDF({ format: 'a5' }); // Formato para celular
   const bName = (state.business?.name || 'TUBOUTIQUE').toUpperCase();
   const hexColor = state.business?.primary_color || '#b87a70';
 
+  // Cabecera Moderna
   doc.setFillColor(hexColor);
-  doc.rect(0, 0, 210, 40, 'F');
+  doc.rect(0, 0, 148, 35, 'F');
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(22);
-  doc.text(bName, 14, 25);
-  doc.setFontSize(10);
-  doc.text('COMPROBANTE DE COMPRA OFICIAL', 14, 32);
 
-  doc.setTextColor(40, 40, 40);
-  doc.setFontSize(12);
-  doc.text(`Cliente: ${customer.name}`, 14, 50);
-  doc.text(`Fecha: ${new Date().toLocaleDateString('es-PY')}`, 140, 50);
+  let textStartX = 10;
+  
+  // Agregar el logo capturado del DOM
+  try {
+    const logoImg = document.querySelector('.sidebar-logo');
+    if (logoImg && logoImg.complete && logoImg.naturalWidth > 0) {
+      const canvas = document.createElement('canvas');
+      canvas.width = logoImg.naturalWidth;
+      canvas.height = logoImg.naturalHeight;
+      canvas.getContext('2d').drawImage(logoImg, 0, 0);
+      const imgData = canvas.toDataURL('image/png');
+      
+      const ratio = logoImg.naturalWidth / logoImg.naturalHeight;
+      let finalW = 25 * ratio;
+      if(finalW > 40) finalW = 40;
+      
+      doc.addImage(imgData, 'PNG', 10, 5, finalW, 25, undefined, 'FAST');
+      textStartX = 10 + finalW + 5;
+    }
+  } catch(e) {
+    console.warn('El logo no pudo ser insertado en el PDF por restricciones de la imagen', e);
+  }
+
+  doc.setFontSize(18);
+  doc.text(bName, textStartX, 20);
+  doc.setFontSize(9);
+  doc.text('RECIBO / COMPROBANTE OFICIAL', textStartX, 28);
+
+  // Datos
+  doc.setTextColor(60, 60, 60);
+  doc.setFontSize(10);
+  doc.text(`Cliente: ${customer.name}`, 10, 45);
+  doc.text(`Fecha: ${new Date().toLocaleDateString('es-PY')} - ${new Date().toLocaleTimeString('es-PY').slice(0,5)}`, 10, 52);
+  if(customer.phone) doc.text(`Teléfono: ${customer.phone}`, 10, 59);
 
   const tableData = purchases.map((p) => [
     p.item_name, 
@@ -1058,21 +1064,33 @@ async function sendWhatsAppTicket(customer, purchases, total, paid, debt) {
   ]);
 
   doc.autoTable({
-    startY: 60,
-    head: [['Prenda / Detalle', 'Total', 'Abonado', 'Saldo Pagar']],
+    startY: 65,
+    head: [['Prenda', 'Total', 'Abonado', 'Saldo']],
     body: tableData,
-    headStyles: { fillColor: hexColor },
-    theme: 'grid'
+    headStyles: { fillColor: hexColor, textColor: 255, fontSize: 9 },
+    bodyStyles: { fontSize: 8 },
+    alternateRowStyles: { fillColor: '#f9f9f9' },
+    theme: 'grid',
+    margin: { left: 10, right: 10 }
   });
 
-  const finalY = doc.lastAutoTable.finalY + 15;
-  doc.setFontSize(12);
-  doc.text(`Total Compras: ${formatPYG(total)}`, 14, finalY);
-  doc.text(`Total Abonado: ${formatPYG(paid)}`, 14, finalY + 8);
+  const finalY = doc.lastAutoTable.finalY + 10;
   
-  doc.setFontSize(14);
+  // Resumen final
+  doc.setFillColor('#f4f4f4');
+  doc.rect(10, finalY, 128, 30, 'F');
+  doc.setTextColor(40, 40, 40);
+  doc.setFontSize(10);
+  doc.text(`Total Compras: ${formatPYG(total)}`, 15, finalY + 8);
+  doc.text(`Total Abonado: ${formatPYG(paid)}`, 15, finalY + 15);
+  
+  doc.setFontSize(12);
   doc.setTextColor(debt > 0 ? 200 : 40, debt > 0 ? 50 : 150, 50); 
-  doc.text(`SALDO A COBRAR: ${formatPYG(debt)}`, 14, finalY + 18);
+  doc.text(`SALDO A COBRAR: ${formatPYG(debt)}`, 15, finalY + 25);
+
+  doc.setFontSize(8);
+  doc.setTextColor(150, 150, 150);
+  doc.text('¡Gracias por tu preferencia!', 74, finalY + 40, { align: 'center' });
 
   const safeName = customer.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
   await generateAndSharePDF(doc, `Recibo_${safeName}.pdf`);
@@ -1087,17 +1105,38 @@ async function sendWhatsAppCatalog() {
 
   setStatus('Construyendo Catálogo PDF Profesional...');
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
+  const doc = new jsPDF({ format: 'a4' });
   const bName = (state.business?.name || 'TUBOUTIQUE').toUpperCase();
   const hexColor = state.business?.primary_color || '#b87a70';
 
   doc.setFillColor(hexColor);
   doc.rect(0, 0, 210, 40, 'F');
   doc.setTextColor(255, 255, 255);
+  
+  let textStartX = 14;
+  
+  try {
+    const logoImg = document.querySelector('.sidebar-logo');
+    if (logoImg && logoImg.complete && logoImg.naturalWidth > 0) {
+      const canvas = document.createElement('canvas');
+      canvas.width = logoImg.naturalWidth;
+      canvas.height = logoImg.naturalHeight;
+      canvas.getContext('2d').drawImage(logoImg, 0, 0);
+      const imgData = canvas.toDataURL('image/png');
+      
+      const ratio = logoImg.naturalWidth / logoImg.naturalHeight;
+      let finalW = 30 * ratio;
+      if(finalW > 50) finalW = 50;
+      
+      doc.addImage(imgData, 'PNG', 14, 5, finalW, 30, undefined, 'FAST');
+      textStartX = 14 + finalW + 5;
+    }
+  } catch(e) { console.warn('El logo no pudo ser insertado en el PDF por restricciones de la imagen', e); }
+
   doc.setFontSize(24);
-  doc.text(bName, 14, 25);
+  doc.text(bName, textStartX, 25);
   doc.setFontSize(12);
-  doc.text('CATÁLOGO OFICIAL DE STOCK', 14, 32);
+  doc.text('CATÁLOGO OFICIAL DE STOCK', textStartX, 32);
 
   const tableData = available.map((g) => [
     g.name, 
@@ -1110,11 +1149,43 @@ async function sendWhatsAppCatalog() {
     startY: 45,
     head: [['Prenda', 'Categoría', 'Stock', 'Precio de Venta']],
     body: tableData,
-    headStyles: { fillColor: hexColor },
+    headStyles: { fillColor: hexColor, textColor: 255, fontSize: 10 },
+    alternateRowStyles: { fillColor: '#f9f9f9' },
     theme: 'grid'
   });
 
   await generateAndSharePDF(doc, `Catalogo_${bName.replace(/\s+/g,'_')}.pdf`);
+}
+
+// Editar Nombre y Teléfono del Cliente
+function editCustomerModalConfig(customer) {
+  $('#edit-customer-id').value = customer.id;
+  $('#edit-customer-name').value = customer.name;
+  $('#edit-customer-phone').value = customer.phone || '';
+  show('#edit-customer-modal');
+}
+
+async function handleEditCustomerSubmit(e) {
+  e.preventDefault();
+  const id = $('#edit-customer-id').value;
+  const newName = $('#edit-customer-name').value.trim();
+  const newPhone = $('#edit-customer-phone').value.trim();
+
+  if (!newName) return;
+  setStatus('Actualizando cliente...');
+
+  const { error } = await state.client.from('customers').update({ name: newName, phone: newPhone }).eq('id', id);
+  if (error) { setStatus(messageFrom(error), 'error'); return; }
+
+  const idx = state.customers.findIndex(c => c.id === id);
+  if (idx > -1) {
+    state.customers[idx].name = newName;
+    state.customers[idx].phone = newPhone;
+  }
+  
+  hide('#edit-customer-modal');
+  renderCustomersMainView();
+  setStatus('Cliente actualizado.', 'success');
 }
 
 function renderCustomersMainView() {
@@ -1170,11 +1241,20 @@ function renderCustomersMainView() {
     }
 
     card.innerHTML = `<div class="customer-card-header"><div><p class="customer-name">${customer.name}</p><p class="customer-phone">${customer.phone ? '📱 ' + customer.phone : 'Sin número de teléfono'}</p></div>${badgeHtml}</div>
-    <div class="customer-items-list">${itemsListHtml}</div><div class="customer-actions"><button type="button" class="small-button dark" data-add-item="${customer.id}">+ Prenda</button>${clientDebt > 0 ? `<button type="button" class="small-button" data-pay-debt="${customer.id}" style="border-color:#438a5e; color:#438a5e; font-weight:bold;">💵 Pago</button>` : ''}<button type="button" class="small-button whatsapp-btn" data-wa-ticket="${customer.id}">📄 PDF</button><button type="button" class="small-button" data-wa-chat="${customer.id}">💬 WPP</button><button type="button" class="small-button" data-del-customer="${customer.id}" style="color:var(--danger);">Borrar</button></div>`;
+    <div class="customer-items-list">${itemsListHtml}</div>
+    <div class="customer-actions">
+      <button type="button" class="small-button dark" data-add-item="${customer.id}">+ Prenda</button>
+      ${clientDebt > 0 ? `<button type="button" class="small-button" data-pay-debt="${customer.id}" style="border-color:#438a5e; color:#438a5e; font-weight:bold;">💵 Pago</button>` : ''}
+      <button type="button" class="small-button whatsapp-btn" data-wa-ticket="${customer.id}">📄 PDF</button>
+      <button type="button" class="small-button" data-wa-chat="${customer.id}">💬 WPP</button>
+      <button type="button" class="small-button" data-edit-customer="${customer.id}" style="color:var(--text);">✏️ Editar</button>
+      <button type="button" class="small-button" data-del-customer="${customer.id}" style="color:var(--danger);">Borrar</button>
+    </div>`;
 
     card.querySelector(`[data-add-item="${customer.id}"]`)?.addEventListener('click', () => openPosModal(customer));
     card.querySelector(`[data-pay-debt="${customer.id}"]`)?.addEventListener('click', () => openPaymentModal(customer, purchases, clientDebt));
     card.querySelector(`[data-wa-ticket="${customer.id}"]`)?.addEventListener('click', () => sendWhatsAppTicket(customer, purchases, totalClientPrice, totalClientPaid, clientDebt));
+    card.querySelector(`[data-edit-customer="${customer.id}"]`)?.addEventListener('click', () => editCustomerModalConfig(customer));
     
     card.querySelector(`[data-del-customer="${customer.id}"]`)?.addEventListener('click', () => {
       openConfirmModal('Eliminar Cliente', `¿Estás seguro de eliminar a ${customer.name} y todo su historial de compras?`, 'Eliminar', true, () => deleteCustomer(customer.id));
@@ -1324,6 +1404,46 @@ function exportProXlsx() {
   const safeTripName = trip.name.replace(/[^a-zA-Z0-9_-]/g, '_'); const dateStr = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, `${boutiqueName}_${safeTripName}_${dateStr}.xlsx`);
   setStatus('¡Planilla Excel (.xlsx) exportada con éxito!', 'success');
+}
+
+// Exportar Base de Datos Completa
+function exportAllData() {
+  if (typeof window.XLSX === 'undefined') { setStatus('Librería Excel no cargada.', 'error'); return; }
+  setStatus('Generando respaldo total de la tienda...');
+
+  const wb = XLSX.utils.book_new();
+  
+  // 1. Exportar Stock Disponible
+  const stock = state.garments.filter(g => !g.is_sold).map(g => ({
+    Prenda: g.name, Categoria: g.category, Cantidad: g.quantity, 
+    Costo_Origen: g.price_brl, Porcentaje_Ganancia: g.profit_percentage
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stock), 'Stock Disponible');
+
+  // 2. Exportar Historial de Ventas
+  const sold = state.garments.filter(g => g.is_sold).map(g => ({
+    Prenda: g.name, Categoria: g.category, Cantidad: g.quantity,
+    Cliente_Asignado: g.customer_id ? state.customers.find(c => c.id === g.customer_id)?.name : 'N/A'
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sold), 'Prendas Vendidas');
+
+  // 3. Exportar CRM (Clientes y Fiados)
+  const crm = state.customers.map(c => {
+    const purchases = state.customerPurchases.filter(p => p.customer_id === c.id);
+    const totalComprado = purchases.reduce((sum, p) => sum + Number(p.price_pyg), 0);
+    const totalPagado = purchases.reduce((sum, p) => sum + Number(p.paid_pyg), 0);
+    return {
+      Cliente: c.name, Telefono: c.phone || 'N/A', 
+      Total_Comprado_PYG: totalComprado, Total_Abonado_PYG: totalPagado, Saldo_Deuda_PYG: (totalComprado - totalPagado)
+    };
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(crm), 'Cartera Clientes');
+
+  // Descargar Archivo
+  const bName = state.business?.name.replace(/[^a-zA-Z0-9]/g, '_') || 'Boutique';
+  const dateStr = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `Respaldo_Total_${bName}_${dateStr}.xlsx`);
+  setStatus('Respaldo descargado exitosamente.', 'success');
 }
 
 function parseUniversalExcelNumber(value, fallback = 0) {
@@ -1477,8 +1597,9 @@ async function createInvitation(event) {
   event.preventDefault();
   const planInfo = getEffectivePlan(); 
   const maxUsers = planInfo.plan === 'emprendedora' ? 2 : 5;
+  const teamCount = $('#invite-list')?.children?.length || 1;
   
-  if (state.customers.length >= maxUsers) { 
+  if (teamCount >= maxUsers) { 
     setStatus(`Límite alcanzado (${maxUsers}). Por favor renueva o subí tu plan contactando a Alex.`, 'error'); 
     return; 
   }
@@ -1524,6 +1645,9 @@ async function initialize() {
   $('#new-customer-form')?.addEventListener('submit', handleNewCustomerSubmit);
   $('#close-new-customer-modal')?.addEventListener('click', () => hide('#new-customer-modal'));
 
+  $('#close-edit-customer-modal')?.addEventListener('click', () => hide('#edit-customer-modal'));
+  $('#edit-customer-form')?.addEventListener('submit', handleEditCustomerSubmit);
+
   $('#excel-file-input')?.addEventListener('change', handleExcelUpload);
   $('#close-excel-modal')?.addEventListener('click', () => hide('#excel-modal')); $('#btn-cancel-import')?.addEventListener('click', () => hide('#excel-modal')); $('#btn-confirm-import')?.addEventListener('click', confirmExcelImport);
 
@@ -1563,7 +1687,8 @@ async function initialize() {
 
   $('#profile-pwd-form')?.addEventListener('submit', handlePasswordChange);
 
-  // Botones de modales genéricos
+  $('#btn-export-all')?.addEventListener('click', exportAllData);
+
   $('#confirm-modal-btn')?.addEventListener('click', () => {
     if(confirmCallback) confirmCallback();
     hide('#custom-confirm-modal');

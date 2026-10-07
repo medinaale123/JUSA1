@@ -22,7 +22,7 @@
       <!-- Pantalla de Bienvenida Animada -->
       <div id="welcome-overlay" class="welcome-overlay hidden">
         <div class="welcome-card">
-          <img src="Logo.png" alt="Logo Boutique" class="welcome-logo app-logo-target" />
+          <img src="Logo.png" alt="Logo Boutique" class="welcome-logo app-logo-target" crossorigin="anonymous" />
           <h1 id="welcome-user-name">¡Bienvenido/a!</h1>
           <p class="welcome-sub">Cargando tu espacio boutique...</p>
         </div>
@@ -40,7 +40,7 @@
 
         <div class="auth-form-container">
           <div class="auth-card custom-auth-card">
-            <img src="tuboutique-logo.jpg" alt="TUBOUTIQUE SaaS Platform" class="tuboutique-brand-logo" />
+            <img src="tuboutique-logo.jpg" alt="TUBOUTIQUE SaaS Platform" class="tuboutique-brand-logo" crossorigin="anonymous" />
             <h1 id="auth-title" class="brand-title">TUBOUTIQUE</h1>
             <p id="auth-subtitle">Ingresá con las credenciales asignadas a tu boutique.</p>
             <form id="auth-form" novalidate>
@@ -59,7 +59,7 @@
 
       <!-- Onboarding -->
       <section id="onboarding-view" class="auth-card hidden" aria-labelledby="onboarding-title">
-        <img src="tuboutique-logo.jpg" alt="TUBOUTIQUE SaaS" class="tuboutique-brand-logo" />
+        <img src="tuboutique-logo.jpg" alt="TUBOUTIQUE SaaS" class="tuboutique-brand-logo" crossorigin="anonymous" />
         <h1 id="onboarding-title">Crear mi Boutique</h1>
         <p>Tu cuenta aún no está asociada a un equipo. Registrá tu marca y comenzá con tu <strong>Prueba Gratis de 7 días (Plan Pro)</strong>.</p>
         <form id="business-form">
@@ -75,7 +75,7 @@
         <!-- BARRA LATERAL IZQUIERDA -->
         <aside id="sidebar" class="sidebar">
           <div class="sidebar-header">
-            <img src="Logo.png" alt="Logo Boutique Inquilina" class="sidebar-logo app-logo-target" />
+            <img src="Logo.png" alt="Logo Boutique Inquilina" class="sidebar-logo app-logo-target" crossorigin="anonymous" />
             <div>
               <p class="eyebrow app-title-target" id="business-label">TUBOUTIQUE</p>
               <h2>Navegación</h2>
@@ -245,8 +245,6 @@
             </div>
           </div>
 
-         <!-- ... [Manten todo el HTML anterior hasta la Vista Mi Perfil] ... -->
-
           <!-- Vista Mi Perfil -->
           <div id="view-profile" class="hidden">
             <div class="view-header">
@@ -282,10 +280,14 @@
                   <button type="submit" class="button">Actualizar Acceso</button>
                 </form>
               </section>
+
+              <section class="profile-card" style="grid-column: 1 / -1;">
+                <h2>Respaldo y Seguridad</h2>
+                <p style="font-size: 13px; color: var(--muted); margin-top: 8px;">En caso de cancelar tu suscripción o necesitar un respaldo local, puedes descargar todos tus datos en un archivo Excel consolidado (Inventario, Clientes, Fiados, etc).</p>
+                <button id="btn-export-all" class="button outline" type="button" style="max-width: 300px;">📦 Exportar Toda mi Tienda</button>
+              </section>
             </div>
           </div>
-
-<!-- ... [Manten el resto del HTML anterior] ... -->
 
           <!-- Vista 1: Calculadora del Viaje / Ingreso -->
           <div id="view-calc">
@@ -641,6 +643,26 @@
       </div>
     </div>
 
+    <!-- MODAL EDITAR CLIENTE (CRM) -->
+    <div id="edit-customer-modal" class="modal-overlay hidden">
+      <div class="modal-card" style="max-width: 450px;">
+        <div class="modal-header">
+          <h2>✏️ Editar Cliente</h2>
+          <button id="close-edit-customer-modal" class="close-modal-btn">×</button>
+        </div>
+        <form id="edit-customer-form" style="margin-top: 16px;">
+          <input type="hidden" id="edit-customer-id" />
+          <label for="edit-customer-name">Nombre y Apellido</label>
+          <input id="edit-customer-name" type="text" required />
+          
+          <label for="edit-customer-phone">Teléfono / WhatsApp</label>
+          <input id="edit-customer-phone" type="text" />
+          
+          <button class="button" type="submit" style="margin-top: 24px;">Guardar Cambios</button>
+        </form>
+      </div>
+    </div>
+
     <!-- MODAL DE PAGO / ABONO PERSONALIZADO -->
     <div id="custom-payment-modal" class="modal-overlay hidden">
       <div class="modal-card" style="max-width: 400px; text-align: center;">
@@ -695,7 +717,7 @@
       </div>
     </div>
 
-    <!-- MODAL DEUDA MANUAL (Reemplazo del Prompt feo) -->
+    <!-- MODAL DEUDA MANUAL -->
     <div id="manual-debt-modal" class="modal-overlay hidden" style="z-index: 99990;">
       <div class="modal-card" style="max-width: 450px;">
         <div class="modal-header">
@@ -745,10 +767,10 @@
         <div class="math-explanation-content" style="font-size: 13px; line-height: 1.6; color: var(--text);">
           <p>La calculadora convierte de forma transparente tus costos extranjeros y reparte los gastos del viaje de forma justa entre cada prenda:</p>
           <ol style="padding-left: 20px; margin: 12px 0;">
-            <li style="margin-bottom: 8px;"><strong>1. Compra Base en PYG:</strong><br /><code>Precio Prenda (BRL/USD) × Cotización Día = Compra (PYG)</code></li>
-            <li style="margin-bottom: 8px;"><strong>2. Gastos Extras (+Viaje):</strong><br />Se suman Pasajes/Movilidad + Viáticos + Fletes.<br /><em>Proporcional al Valor:</em> Asigna más gasto a prendas más caras.<br /><em>Por Cantidad:</em> Reparte el gasto por igual.</li>
-            <li style="margin-bottom: 8px;"><strong>3. Costo Real:</strong><br /><code>Compra (PYG) + Gastos Asignados = Costo Real</code></li>
-            <li style="margin-bottom: 8px;"><strong>4. Precio Venta Final:</strong><br /><em>Markup (sobre costo):</em> <code>Costo Real × (1 + %Ganancia/100)</code><br /><em>Margen (sobre venta):</em> <code>Costo Real ÷ (1 - %Ganancia/100)</code></li>
+            <li style="margin-bottom: 8px;"><strong>Compra Base en PYG:</strong><br /><code>Precio Prenda (BRL/USD) × Cotización Día = Compra (PYG)</code></li>
+            <li style="margin-bottom: 8px;"><strong>Gastos Extras (+Viaje):</strong><br />Se suman Pasajes/Movilidad + Viáticos + Fletes.<br /><em>Proporcional al Valor:</em> Asigna más gasto a prendas más caras.<br /><em>Por Cantidad:</em> Reparte el gasto por igual.</li>
+            <li style="margin-bottom: 8px;"><strong>Costo Real:</strong><br /><code>Compra (PYG) + Gastos Asignados = Costo Real</code></li>
+            <li style="margin-bottom: 8px;"><strong>Precio Venta Final:</strong><br /><em>Markup (sobre costo):</em> <code>Costo Real × (1 + %Ganancia/100)</code><br /><em>Margen (sobre venta):</em> <code>Costo Real ÷ (1 - %Ganancia/100)</code></li>
           </ol>
         </div>
       </div>

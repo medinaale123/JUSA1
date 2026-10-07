@@ -865,7 +865,6 @@ button {
   color: #c0392b !important;
 }
 
-/* Vista Mi Perfil */
 .profile-info-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1371,7 +1370,6 @@ tr.sold-row {
   font-size: 12px;
 }
 
-/* REGLAS RESPONSIVE PARA MÓVILES */
 @media (max-width: 900px) {
   .auth-split-layout {
     flex-direction: column;
@@ -1465,6 +1463,41 @@ tr.sold-row {
   .customer-actions {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 500px) {
+  .table-wrap {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    margin-left: -12px;
+    width: calc(100% + 24px);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .dashboard-welcome-banner {
+    padding: 16px;
+  }
+  
+  .dashboard-welcome-banner h1 {
+    font-size: 20px;
+  }
+  
+  .kpi-card {
+    padding: 12px;
+  }
+  
+  .action-card {
+    min-width: 100%;
+  }
+
+  .modal-card {
+    padding: 16px;
+    margin: 5px;
+    width: 95%;
+    max-height: 90vh;
   }
 }
 
